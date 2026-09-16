@@ -1,0 +1,651 @@
+[
+  {
+    "id": "ef9e9ca6-9903-4d29-b182-6ee0be2a50fc",
+    "name": "Blue and Gold Professional Business Company Letterhead.docx",
+    "filename": "ef9e9ca6-9903-4d29-b182-6ee0be2a50fc_Blue_and_Gold_Professional_Business_Company_Letterhead.docx",
+    "placeholders": [],
+    "created_at": "2026-09-16T09:41:55.170Z"
+  },
+  {
+    "id": "bdfba390-6dd0-4c38-b04d-c74e215262a8",
+    "name": "White Gold Minimalist Professional Corporate Job Offer Letter.docx",
+    "filename": "bdfba390-6dd0-4c38-b04d-c74e215262a8_White_Gold_Minimalist_Professional_Corporate_Job_Offer_Letter.docx",
+    "placeholders": [
+      {
+        "name": "Address",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Address"
+      },
+      {
+        "name": "AnnualCompensation",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter AnnualCompensation"
+      },
+      {
+        "name": "CompanyName",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter CompanyName"
+      },
+      {
+        "name": "Designation",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Designation"
+      },
+      {
+        "name": "JoiningDate",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter JoiningDate"
+      },
+      {
+        "name": "Name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Name"
+      },
+      {
+        "name": "OfferLetterDate",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter OfferLetterDate"
+      },
+      {
+        "name": "ReportingManager",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter ReportingManager"
+      },
+      {
+        "name": "ReportingManagerDesignation",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter ReportingManagerDesignation"
+      }
+    ],
+    "created_at": "2026-09-16T09:16:29.538Z"
+  },
+  {
+    "id": "c960691a-20fd-4e59-92fc-c496793abea8",
+    "name": "Nichebit Offer Letter Template Same Format.docx",
+    "filename": "c960691a-20fd-4e59-92fc-c496793abea8_Nichebit_Offer_Letter_Template_Same_Format.docx",
+    "placeholders": [
+      {
+        "name": "AcceptanceDate",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter AcceptanceDate"
+      },
+      {
+        "name": "AcceptanceDeadline",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter AcceptanceDeadline"
+      },
+      {
+        "name": "BasicAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter BasicAnnual"
+      },
+      {
+        "name": "CTC",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter CTC"
+      },
+      {
+        "name": "CTCInWords",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter CTCInWords"
+      },
+      {
+        "name": "Date",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Date"
+      },
+      {
+        "name": "Designation",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Designation"
+      },
+      {
+        "name": "EngagementType",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter EngagementType"
+      },
+      {
+        "name": "FullName",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter FullName"
+      },
+      {
+        "name": "GrossAnnual",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter GrossAnnual"
+      },
+      {
+        "name": "HraAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter HraAnnual"
+      },
+      {
+        "name": "JoiningDate",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter JoiningDate"
+      },
+      {
+        "name": "Location",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Location"
+      },
+      {
+        "name": "Name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Name"
+      },
+      {
+        "name": "PFAnnual",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter PFAnnual"
+      },
+      {
+        "name": "ProbationPeriodT",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter ProbationPeriodT"
+      },
+      {
+        "name": "RefNo",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter RefNo"
+      },
+      {
+        "name": "WorkingWeek",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter WorkingWeek"
+      }
+    ],
+    "created_at": "2026-09-16T06:53:14.941Z"
+  },
+  {
+    "id": "2d8e9454-cdc4-4266-8bcb-71c22ca730ac",
+    "name": "Internship Certificate.docx",
+    "filename": "2d8e9454-cdc4-4266-8bcb-71c22ca730ac_Internship_Certificate.docx",
+    "placeholders": [
+      {
+        "name": "first_name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter first name"
+      },
+      {
+        "name": "last_name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter last name"
+      },
+      {
+        "name": "employee_id",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter employee id"
+      },
+      {
+        "name": "designation",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter designation"
+      },
+      {
+        "name": "department",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter department"
+      },
+      {
+        "name": "date_of_joining",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter date of joining"
+      },
+      {
+        "name": "salary",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter salary"
+      }
+    ],
+    "created_at": "2026-09-16T06:14:44.348Z"
+  },
+  {
+    "id": "43e3359b-6629-4b18-b7d2-20640237aaa8",
+    "name": "Offer Letter.docx",
+    "filename": "43e3359b-6629-4b18-b7d2-20640237aaa8_Offer_Letter.docx",
+    "placeholders": [
+      {
+        "name": "first_name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter first name"
+      },
+      {
+        "name": "last_name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter last name"
+      },
+      {
+        "name": "employee_id",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter employee id"
+      },
+      {
+        "name": "designation",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter designation"
+      },
+      {
+        "name": "department",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter department"
+      },
+      {
+        "name": "date_of_joining",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter date of joining"
+      },
+      {
+        "name": "joining_time",
+        "type": "time",
+        "required": true,
+        "calculated": false,
+        "description": "Enter joining time"
+      },
+      {
+        "name": "ctc_total",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter ctc total"
+      },
+      {
+        "name": "email",
+        "type": "email",
+        "required": true,
+        "calculated": false,
+        "description": "Enter email"
+      },
+      {
+        "name": "phone",
+        "type": "phone",
+        "required": true,
+        "calculated": false,
+        "description": "Enter phone"
+      },
+      {
+        "name": "annual_basic",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed annual basic"
+      },
+      {
+        "name": "annual_hra",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed annual hra"
+      },
+      {
+        "name": "basic_per_month",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed basic per month"
+      },
+      {
+        "name": "gratuity_per_month",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed gratuity per month"
+      },
+      {
+        "name": "gratuity_per_year",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed gratuity per year"
+      },
+      {
+        "name": "hra_per_month",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed hra per month"
+      },
+      {
+        "name": "monthly_special_allowance",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed monthly special allowance"
+      },
+      {
+        "name": "pf_per_month",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed pf per month"
+      },
+      {
+        "name": "pf_per_year",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed pf per year"
+      },
+      {
+        "name": "special_allowance",
+        "type": "currency",
+        "required": false,
+        "calculated": true,
+        "description": "Computed special allowance"
+      }
+    ],
+    "created_at": "2026-09-16T06:14:44.356Z"
+  },
+  {
+    "id": "d2a90992-80ce-48c0-85be-e0a12dc54acf",
+    "name": "Nichebit Offer Letter Template Same Format.docx",
+    "filename": "d2a90992-80ce-48c0-85be-e0a12dc54acf_Nichebit_Offer_Letter_Template_Same_Format.docx",
+    "placeholders": [
+      {
+        "name": "AcceptanceDate",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter AcceptanceDate"
+      },
+      {
+        "name": "AcceptanceDeadline",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter AcceptanceDeadline"
+      },
+      {
+        "name": "BasicAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter BasicAnnual"
+      },
+      {
+        "name": "BasicMonthly",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter BasicMonthly"
+      },
+      {
+        "name": "CTC",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter CTC"
+      },
+      {
+        "name": "CTCInWords",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter CTCInWords"
+      },
+      {
+        "name": "Date",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Date"
+      },
+      {
+        "name": "Designation",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Designation"
+      },
+      {
+        "name": "EngagementType",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter EngagementType"
+      },
+      {
+        "name": "FullName",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter FullName"
+      },
+      {
+        "name": "GratuityAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter GratuityAnnual"
+      },
+      {
+        "name": "GratuityMonthly",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter GratuityMonthly"
+      },
+      {
+        "name": "GrossAnnual",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter GrossAnnual"
+      },
+      {
+        "name": "GrossMonthly",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter GrossMonthly"
+      },
+      {
+        "name": "HraAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter HraAnnual"
+      },
+      {
+        "name": "HraMonthly",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter HraMonthly"
+      },
+      {
+        "name": "JoiningDate",
+        "type": "date",
+        "required": true,
+        "calculated": false,
+        "description": "Enter JoiningDate"
+      },
+      {
+        "name": "Location",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Location"
+      },
+      {
+        "name": "Name",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter Name"
+      },
+      {
+        "name": "PerformanceBonusAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter PerformanceBonusAnnual"
+      },
+      {
+        "name": "PerformanceBonusMonthly",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter PerformanceBonusMonthly"
+      },
+      {
+        "name": "PFAnnual",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter PFAnnual"
+      },
+      {
+        "name": "PFMonthly",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter PFMonthly"
+      },
+      {
+        "name": "ProbationPeriodT",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter ProbationPeriodT"
+      },
+      {
+        "name": "RefNo",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter RefNo"
+      },
+      {
+        "name": "SpecialAllowanceAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter SpecialAllowanceAnnual"
+      },
+      {
+        "name": "SpecialAllowanceMonthly",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter SpecialAllowanceMonthly"
+      },
+      {
+        "name": "TotalCtcAnnual",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter TotalCtcAnnual"
+      },
+      {
+        "name": "TotalCtcMonthly",
+        "type": "currency",
+        "required": true,
+        "calculated": false,
+        "description": "Enter TotalCtcMonthly"
+      },
+      {
+        "name": "TotalFixedAnnual",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter TotalFixedAnnual"
+      },
+      {
+        "name": "TotalFixedMonthly",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter TotalFixedMonthly"
+      },
+      {
+        "name": "WorkingWeek",
+        "type": "text",
+        "required": true,
+        "calculated": false,
+        "description": "Enter WorkingWeek"
+      }
+    ],
+    "created_at": "2026-09-16T06:14:44.363Z"
+  }
+]

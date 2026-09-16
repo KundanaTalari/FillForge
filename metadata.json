@@ -1,0 +1,6 @@
+{
+  "name": "FillForge",
+  "description": "Document automation application for generating customized DOCX and PDF documents from templates with dynamic placeholder detection, CTC salary calculation, and bulk generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
