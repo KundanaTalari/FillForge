@@ -39,6 +39,62 @@ const TEMPLATES_DIR = path.join(STORAGE_DIR, 'templates');
 const GENERATED_DIR = path.join(STORAGE_DIR, 'generated');
 const BULK_DIR = path.join(STORAGE_DIR, 'bulk');
 const DB_FILE = path.join(STORAGE_DIR, 'documents.json');
+const USERS_FILE = path.join(STORAGE_DIR, 'users.json');
+
+interface UserRecord {
+  id: string;
+  name: string;
+  email: string;
+  salt: string;
+  passwordHash: string;
+  created_at: string;
+}
+
+interface SessionRecord {
+  userId: string;
+  expiresAt: number;
+}
+
+const sessions = new Map<string, SessionRecord>();
+
+function loadUsers(): UserRecord[] {
+  try {
+    const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsers(users: UserRecord[]) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+}
+
+function hashPassword(password: string, salt: string) {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+function publicUser(user: UserRecord) {
+  return { id: user.id, name: user.name, email: user.email };
+}
+
+function getCookie(req: express.Request, name: string) {
+  const raw = req.headers.cookie || '';
+  const match = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
+}
+
+function createSession(res: express.Response, userId: string) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const maxAgeSeconds = 60 * 60 * 8;
+  sessions.set(token, { userId, expiresAt: Date.now() + maxAgeSeconds * 1000 });
+  res.cookie('fillforge_session', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: maxAgeSeconds * 1000,
+    secure: process.env.NODE_ENV === 'production',
+  });
+}
 
 // Ensure storage directories exist
 [STORAGE_DIR, TEMPLATES_DIR, GENERATED_DIR, BULK_DIR].forEach((dir) => {
@@ -120,6 +176,79 @@ async function startServer() {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  app.post('/auth/signup', (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!name || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) {
+      res.status(400).json({ detail: 'Enter your name, a valid email, and a password of at least 8 characters.' });
+      return;
+    }
+    const users = loadUsers();
+    if (users.some((user) => user.email === email)) {
+      res.status(409).json({ detail: 'An account with this email already exists.' });
+      return;
+    }
+    const salt = crypto.randomBytes(16).toString('hex');
+    const user: UserRecord = {
+      id: crypto.randomUUID(), name, email, salt,
+      passwordHash: hashPassword(password, salt), created_at: new Date().toISOString(),
+    };
+    users.push(user);
+    saveUsers(users);
+    createSession(res, user.id);
+    res.status(201).json({ user: publicUser(user) });
+  });
+
+  app.post('/auth/signin', (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const user = loadUsers().find((entry) => entry.email === email);
+    if (!user || !crypto.timingSafeEqual(Buffer.from(user.passwordHash, 'hex'), Buffer.from(hashPassword(password, user.salt), 'hex'))) {
+      res.status(401).json({ detail: 'Incorrect email or password.' });
+      return;
+    }
+    createSession(res, user.id);
+    res.json({ user: publicUser(user) });
+  });
+
+  app.post('/auth/signout', (req, res) => {
+    const token = getCookie(req, 'fillforge_session');
+    if (token) sessions.delete(token);
+    res.clearCookie('fillforge_session');
+    res.status(204).end();
+  });
+
+  app.get('/auth/me', (req, res) => {
+    const token = getCookie(req, 'fillforge_session');
+    const session = token ? sessions.get(token) : undefined;
+    if (!session || session.expiresAt < Date.now()) {
+      if (token) sessions.delete(token);
+      res.status(401).json({ detail: 'Not signed in.' });
+      return;
+    }
+    const user = loadUsers().find((entry) => entry.id === session.userId);
+    if (!user) {
+      sessions.delete(token!);
+      res.status(401).json({ detail: 'Not signed in.' });
+      return;
+    }
+    res.json({ user: publicUser(user) });
+  });
+
+  app.use((req, res, next) => {
+    const protectedPath = req.path.startsWith('/documents') || req.path === '/calculate' || req.path === '/seed-samples' || req.path === '/api/seed-samples';
+    if (!protectedPath) return next();
+    const token = getCookie(req, 'fillforge_session');
+    const session = token ? sessions.get(token) : undefined;
+    if (!session || session.expiresAt < Date.now()) {
+      if (token) sessions.delete(token);
+      res.status(401).json({ detail: 'Please sign in to continue.' });
+      return;
+    }
+    next();
+  });
 
   // 1. Health check
   app.get('/health', (req, res) => {

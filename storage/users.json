@@ -1,0 +1,10 @@
+[
+  {
+    "id": "31e0ff94-8940-4d79-9109-b517843cce44",
+    "name": "Kundana Talari",
+    "email": "kundana.t@nichebit.com",
+    "salt": "ad1d3a686a252c1d3d96e394cfcb7ac0",
+    "passwordHash": "ceb81c3e1576eb68a6eabafb20b952ba7109e75e936c30f812115b7ceb6b15dff3e9cccd440a8e3a1e74a7787383d12b10052ba78e9e383d6d5f68174ff8afbd",
+    "created_at": "2026-09-17T07:38:09.638Z"
+  }
+]

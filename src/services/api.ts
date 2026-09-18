@@ -4,7 +4,33 @@ import { DocumentMeta, CTCBreakdown, BulkResult } from '../types';
 const api = axios.create({
   baseURL: '', // Uses relative paths, intercepted by dev proxy or express
   timeout: 120000,
+  withCredentials: true,
 });
+
+export interface User { id: string; name: string; email: string; }
+
+export const getCurrentUser = async (): Promise<User | null> => {
+  try {
+    const res = await api.get('/auth/me');
+    return res.data.user;
+  } catch {
+    return null;
+  }
+};
+
+export const signIn = async (email: string, password: string): Promise<User> => {
+  const res = await api.post('/auth/signin', { email, password });
+  return res.data.user;
+};
+
+export const signUp = async (name: string, email: string, password: string): Promise<User> => {
+  const res = await api.post('/auth/signup', { name, email, password });
+  return res.data.user;
+};
+
+export const signOut = async () => {
+  await api.post('/auth/signout');
+};
 
 export const getHealth = async () => {
   const res = await api.get('/health');

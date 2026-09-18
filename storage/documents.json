@@ -212,63 +212,6 @@
     "created_at": "2026-09-16T06:53:14.941Z"
   },
   {
-    "id": "2d8e9454-cdc4-4266-8bcb-71c22ca730ac",
-    "name": "Internship Certificate.docx",
-    "filename": "2d8e9454-cdc4-4266-8bcb-71c22ca730ac_Internship_Certificate.docx",
-    "placeholders": [
-      {
-        "name": "first_name",
-        "type": "text",
-        "required": true,
-        "calculated": false,
-        "description": "Enter first name"
-      },
-      {
-        "name": "last_name",
-        "type": "text",
-        "required": true,
-        "calculated": false,
-        "description": "Enter last name"
-      },
-      {
-        "name": "employee_id",
-        "type": "text",
-        "required": true,
-        "calculated": false,
-        "description": "Enter employee id"
-      },
-      {
-        "name": "designation",
-        "type": "text",
-        "required": true,
-        "calculated": false,
-        "description": "Enter designation"
-      },
-      {
-        "name": "department",
-        "type": "text",
-        "required": true,
-        "calculated": false,
-        "description": "Enter department"
-      },
-      {
-        "name": "date_of_joining",
-        "type": "date",
-        "required": true,
-        "calculated": false,
-        "description": "Enter date of joining"
-      },
-      {
-        "name": "salary",
-        "type": "currency",
-        "required": true,
-        "calculated": false,
-        "description": "Enter salary"
-      }
-    ],
-    "created_at": "2026-09-16T06:14:44.348Z"
-  },
-  {
     "id": "43e3359b-6629-4b18-b7d2-20640237aaa8",
     "name": "Offer Letter.docx",
     "filename": "43e3359b-6629-4b18-b7d2-20640237aaa8_Offer_Letter.docx",

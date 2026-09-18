@@ -3,8 +3,9 @@ import { Sidebar } from './components/Sidebar';
 import { DocumentPreview } from './components/DocumentPreview';
 import { DynamicForm } from './components/DynamicForm';
 import { BulkMode } from './components/BulkMode';
+import { AuthScreen } from './components/AuthScreen';
 import { DocumentMeta, CTCBreakdown } from './types';
-import { getDocuments, uploadDocument, deleteDocument } from './services/api';
+import { getDocuments, uploadDocument, deleteDocument, getCurrentUser, signOut, User } from './services/api';
 import {
   FileText,
   Layers,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react';
 
 export function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [activeMode, setActiveMode] = useState<'single' | 'bulk'>('single');
@@ -25,6 +28,13 @@ export function App() {
   // Live real-time field values and CTC calculations for the preview
   const [liveFormData, setLiveFormData] = useState<Record<string, any>>({});
   const [liveCalculations, setLiveCalculations] = useState<CTCBreakdown | null>(null);
+
+  useEffect(() => {
+    getCurrentUser().then((currentUser) => {
+      setUser(currentUser);
+      setAuthChecking(false);
+    });
+  }, []);
 
   const fetchDocs = async () => {
     try {
@@ -48,8 +58,17 @@ export function App() {
   };
 
   useEffect(() => {
+    if (!user) return;
     fetchDocs();
-  }, []);
+  }, [user]);
+
+  if (authChecking) {
+    return <div className="min-h-screen grid place-items-center bg-slate-50 text-sm font-medium text-slate-500">Loading FillForge…</div>;
+  }
+
+  if (!user) {
+    return <AuthScreen onAuthenticated={setUser} />;
+  }
 
   const handleSelectDoc = (id: string) => {
     setSelectedDocId(id);
@@ -144,6 +163,17 @@ export function App() {
               <span>Bulk Mode</span>
             </button>
           </div>
+        </div>
+
+        <div className="px-5 py-2 border-b border-slate-100 flex items-center justify-between text-xs">
+          <span className="truncate text-slate-500">Signed in as <strong className="text-slate-700">{user.name}</strong></span>
+          <button
+            type="button"
+            onClick={async () => { await signOut(); setUser(null); }}
+            className="font-semibold text-slate-500 hover:text-rose-600"
+          >
+            Sign out
+          </button>
         </div>
 
         {/* Mode Content */}

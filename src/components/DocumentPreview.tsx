@@ -618,7 +618,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       {/* 1. Top Primary Toolbar: Template Switcher & Mode Toggles */}
       <div className="min-h-14 px-4 sm:px-5 py-2 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-2xs">
         {/* Left: Template Selector Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full">
+        <div className="hidden" aria-hidden="true">
           {onToggleSidebar && (
             <button
               type="button"
@@ -844,7 +844,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
           {/* Quick Download Buttons */}
           {viewMode === 'single' && (
-            <div className="flex items-center gap-1.5">
+            <div className="hidden" aria-hidden="true">
               <button
                 type="button"
                 disabled={downloadingDocId === document.id}
