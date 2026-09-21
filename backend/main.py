@@ -1,39 +1,108 @@
 import os
 import uuid
+import hashlib
+import hmac
+import secrets
+import time
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
 
-from db import init_db, insert_document, get_all_documents, get_document_by_id, delete_document_by_id, record_generation
-from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename
+from db import init_db, insert_document, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
+from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, GENERATED_DIR
 from generation import extract_placeholders_from_docx, render_document, convert_to_pdf
 from bulk import generate_sample_sheet, process_bulk_generation
 from calculations import calculate_ctc
 from validation import validate_and_normalize_value, is_calculated_variable
-from schemas import GenerateRequest, BulkGenerateResponse
+from schemas import GenerateRequest, BulkGenerateResponse, SignUpRequest, SignInRequest
 
 app = FastAPI(title="FillForge API", version="1.0.0")
 
 # Enable CORS for local Vite development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+SESSIONS: Dict[str, Dict[str, Any]] = {}
+SESSION_SECONDS = 60 * 60 * 8
+
+def password_hash(password: str, salt: str) -> str:
+    return hashlib.scrypt(password.encode("utf-8"), salt=salt.encode("utf-8"), n=16384, r=8, p=1).hex()
+
+def public_user(user: Dict[str, Any]) -> Dict[str, str]:
+    return {"id": user["id"], "name": user["name"], "email": user["email"]}
+
+def create_session(response: Response, user_id: str):
+    token = secrets.token_urlsafe(32)
+    SESSIONS[token] = {"user_id": user_id, "expires_at": time.time() + SESSION_SECONDS}
+    response.set_cookie("fillforge_session", token, httponly=True, samesite="lax", max_age=SESSION_SECONDS)
+
+def require_user(request: Request):
+    token = request.cookies.get("fillforge_session")
+    session = SESSIONS.get(token or "")
+    if not session or session["expires_at"] < time.time():
+        if token: SESSIONS.pop(token, None)
+        raise HTTPException(status_code=401, detail="Please sign in to continue.")
+    user = get_user_by_id(session["user_id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="Please sign in to continue.")
+    return user
+
 @app.on_event("startup")
 def on_startup():
     init_storage()
     init_db()
+    # The legacy JSON import was a one-time migration. Re-running it on every
+    # startup resurrected templates that users had already deleted.
+    cleanup_missing_template_records()
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "FillForge"}
+
+def cleanup_missing_template_records():
+    """Remove database records whose original uploaded DOCX no longer exists."""
+    for document in get_all_documents():
+        if not get_template_path(document["filename"]).exists():
+            delete_document_by_id(document["id"])
+
+@app.post("/auth/signup")
+def signup(payload: SignUpRequest, response: Response):
+    name, email, password = payload.name.strip(), payload.email.strip().lower(), payload.password
+    if not name or "@" not in email or "." not in email.split("@")[-1] or len(password) < 8:
+        raise HTTPException(status_code=400, detail="Enter your name, a valid email, and a password of at least 8 characters.")
+    if get_user_by_email(email):
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    user_id, salt = str(uuid.uuid4()), secrets.token_hex(16)
+    insert_user(user_id, name, email, salt, password_hash(password, salt))
+    create_session(response, user_id)
+    return {"user": {"id": user_id, "name": name, "email": email}}
+
+@app.post("/auth/signin")
+def signin(payload: SignInRequest, response: Response):
+    user = get_user_by_email(payload.email.strip().lower())
+    if not user or not hmac.compare_digest(user["password_hash"], password_hash(payload.password, user["password_salt"])):
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+    create_session(response, user["id"])
+    return {"user": public_user(user)}
+
+@app.post("/auth/signout", status_code=204)
+def signout(request: Request, response: Response):
+    token = request.cookies.get("fillforge_session")
+    if token: SESSIONS.pop(token, None)
+    response.delete_cookie("fillforge_session")
+
+@app.get("/auth/me")
+def me(request: Request):
+    return {"user": public_user(require_user(request))}
 
 @app.get("/documents")
 def list_documents():
@@ -101,6 +170,41 @@ def preview_document(doc_id: str):
         filename=doc["name"]
     )
 
+@app.get("/documents/{doc_id}/preview-pdf")
+def preview_document_pdf(doc_id: str):
+    """Returns a PDF rendering of the untouched uploaded template."""
+    doc = get_document_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    file_path = get_template_path(doc["filename"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Template file not found on server")
+    try:
+        cache_dir = GENERATED_DIR / "preview-cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        # Reuse the finished PDF while the original DOCX remains unchanged.
+        # This eliminates LibreOffice startup time whenever a template is
+        # selected again.
+        template_version = file_path.stat().st_mtime_ns
+        pdf_path = cache_dir / f"{doc_id}_{template_version}.pdf"
+        if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+            job_dir = cache_dir / f"job-{uuid.uuid4().hex}"
+            job_dir.mkdir(parents=True, exist_ok=True)
+            preview_copy = job_dir / Path(doc["filename"]).name
+            shutil.copy2(file_path, preview_copy)
+            generated_pdf = convert_to_pdf(preview_copy)
+            shutil.move(str(generated_pdf), str(pdf_path))
+        pdf_name = Path(doc["name"]).with_suffix(".pdf").name
+        return FileResponse(
+            str(pdf_path),
+            media_type="application/pdf",
+            # `filename=` makes Starlette send Content-Disposition: attachment.
+            # The preview must be inline so browsers render it in the iframe.
+            headers={"Content-Disposition": f'inline; filename="{pdf_name}"'},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF preview failed: {exc}")
+
 @app.delete("/documents/{doc_id}")
 def delete_document(doc_id: str):
     doc = get_document_by_id(doc_id)
@@ -133,7 +237,11 @@ def live_calculation(payload: Dict[str, Any]):
             ctc_total=ctc,
             basic_pf=pf,
             pf_mode=mode,
-            pf_percentage=pct
+            pf_percentage=pct,
+            preset=payload.get("preset", "nichebit"),
+            hra_rate_pct=payload.get("hra_rate_pct", 10),
+            insurance_annual=payload.get("insurance_annual", 8000),
+            basic_mode=payload.get("basic_mode", "statutory_min"),
         )
         return breakdown
     except Exception as e:

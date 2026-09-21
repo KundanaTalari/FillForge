@@ -145,6 +145,35 @@ def format_inr_currency(val: Union[Decimal, float, int]) -> str:
 
     return f"-{res}" if is_negative else res
 
+def amount_to_indian_rupees_words(value: Union[Decimal, float, int, str]) -> str:
+    """Formats 240000 as 'Rupees Two Lakh Forty Thousand Only'."""
+    try:
+        amount = int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except Exception:
+        return ""
+    if amount <= 0:
+        return ""
+    ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+    def below_thousand(number: int) -> str:
+        words = []
+        if number >= 100:
+            words.append(f"{ones[number // 100]} Hundred")
+        number %= 100
+        if number >= 20:
+            words.append(f"{tens[number // 10]}{(' ' + ones[number % 10]) if number % 10 else ''}")
+        elif number:
+            words.append(ones[number])
+        return " ".join(words)
+    parts = []
+    for divisor, label in ((10_000_000, "Crore"), (100_000, "Lakh"), (1_000, "Thousand")):
+        group, amount = divmod(amount, divisor)
+        if group:
+            parts.append(f"{below_thousand(group)} {label}")
+    if amount:
+        parts.append(below_thousand(amount))
+    return f"Rupees {' '.join(parts)} Only"
+
 
 def round_decimal(val: Decimal, places: int = 2) -> Decimal:
     """Rounds Decimal to specified decimal places using ROUND_HALF_UP."""
@@ -157,7 +186,10 @@ def calculate_ctc(
     basic_pf: Union[Decimal, float, int, str] = 1800,
     pf_mode: str = "fixed",
     pf_percentage: Union[Decimal, float, int, str] = 12,
-    custom_gratuity_rate: Decimal = GRATUITY_RATE
+    preset: str = "nichebit",
+    hra_rate_pct: Union[Decimal, float, int, str] = 10,
+    insurance_annual: Union[Decimal, float, int, str] = 8000,
+    basic_mode: str = "statutory_min",
 ) -> Dict[str, Dict[str, Any]]:
     """
     Dedicated CTC calculation engine.
@@ -182,40 +214,53 @@ def calculate_ctc(
 
     Returns structured dictionary with both raw_value (float) and formatted_value (INR string).
     """
-    ctc_dec = Decimal(str(ctc_total or 0))
-    basic_pf_dec = Decimal(str(basic_pf or 0))
-    pf_pct_dec = Decimal(str(pf_percentage or 12)) / Decimal("100")
+    ctc_dec = max(Decimal("0"), Decimal(str(ctc_total or 0)))
+    basic_pf_dec = max(Decimal("0"), Decimal(str(basic_pf or 1800)))
+    pf_pct_dec = max(Decimal("0"), Decimal(str(pf_percentage or 12))) / Decimal("100")
+    is_nichebit = preset == "nichebit"
 
-    # 1. Annual Basic & Monthly Basic
-    annual_basic = ctc_dec / Decimal("2")
-    basic_per_month = ctc_dec / Decimal("24")
+    # Matches the supplied ₹3.5L Nichebit PDF: ₹15k basic/month, ₹1.5k HRA.
+    if is_nichebit:
+        basic_per_month = Decimal("15000") if ctc_dec <= Decimal("360000") else round_decimal(ctc_dec * Decimal("0.5") / 12, 0)
+        hra_per_month = round_decimal(basic_per_month * Decimal("0.10"), 2)
+    elif preset == "standard":
+        basic_per_month = round_decimal(ctc_dec / 24, 2)
+        hra_per_month = round_decimal(basic_per_month * Decimal("0.50"), 2)
+    else:
+        basic_per_month = max(Decimal("15000"), round_decimal(ctc_dec * Decimal("0.5") / 12, 0))
+        hra_per_month = round_decimal(basic_per_month * max(Decimal("0"), Decimal(str(hra_rate_pct))) / 100, 2)
+    annual_basic = basic_per_month * 12
+    annual_hra = hra_per_month * 12
 
-    # 2. Annual HRA & Monthly HRA
-    annual_hra = ctc_dec / Decimal("4")
-    hra_per_month = ctc_dec / Decimal("48")
-
-    # 3. PF calculations
     if pf_mode == "percentage":
-        pf_per_year = annual_basic * pf_pct_dec
         pf_per_month = basic_per_month * pf_pct_dec
-    else:  # fixed mode
+    else:
         pf_per_month = basic_pf_dec
-        pf_per_year = basic_pf_dec * Decimal("12")
+    pf_per_month = round_decimal(pf_per_month, 2)
+    pf_per_year = pf_per_month * 12
 
-    # 4. Gratuity calculations
-    gratuity_per_year = annual_basic * custom_gratuity_rate
-    gratuity_per_month = basic_per_month * custom_gratuity_rate
+    # Gratuity: ceil((basic × 15 / 26) / 12); ₹15k basic becomes ₹722/month.
+    if is_nichebit or preset == "standard":
+        gratuity_per_month = Decimal((basic_per_month * 15 / 26 / 12).__ceil__())
+        gratuity_per_year = gratuity_per_month * 12
+    else:
+        gratuity_per_year = round_decimal(annual_basic * GRATUITY_RATE, 2)
+        gratuity_per_month = round_decimal(gratuity_per_year / 12, 2)
 
-    # 5. Special Allowance calculations
-    total_deductions = annual_basic + annual_hra + pf_per_year + gratuity_per_year
-    special_allowance = ctc_dec - total_deductions
-    monthly_special_allowance = special_allowance / Decimal("12")
+    insurance = Decimal("8000") if is_nichebit else (Decimal("0") if preset == "standard" else max(Decimal("0"), Decimal(str(insurance_annual or 0))))
+    special_allowance = round_decimal(ctc_dec - annual_basic - annual_hra - pf_per_year - gratuity_per_year - insurance, 2)
+    monthly_special_allowance = round_decimal(special_allowance / 12, 0)
+    gross_monthly_salary = round_decimal(basic_per_month + hra_per_month + monthly_special_allowance, 2)
+    gross_annual_salary = round_decimal(annual_basic + annual_hra + special_allowance, 2)
+    total_fixed_monthly = round_decimal(gross_monthly_salary + pf_per_month + gratuity_per_month, 2)
 
     # Store definitions
     raw_results = {
         "ctc_total": ctc_dec,
         "annual_basic": round_decimal(annual_basic, 2),
         "basic_per_month": round_decimal(basic_per_month, 2),
+        "annual_basic_da": round_decimal(annual_basic, 2),
+        "basic_da_per_month": round_decimal(basic_per_month, 2),
         "annual_hra": round_decimal(annual_hra, 2),
         "hra_per_month": round_decimal(hra_per_month, 2),
         "pf_per_year": round_decimal(pf_per_year, 2),
@@ -224,6 +269,16 @@ def calculate_ctc(
         "gratuity_per_month": round_decimal(gratuity_per_month, 2),
         "special_allowance": round_decimal(special_allowance, 2),
         "monthly_special_allowance": round_decimal(monthly_special_allowance, 2),
+        "gross_monthly_salary": gross_monthly_salary,
+        "gross_annual_salary": gross_annual_salary,
+        "insurance_per_year": insurance,
+        "insurance_per_month": Decimal("0"),
+        "insurance_annual": insurance,
+        "insurance_monthly": Decimal("0"),
+        "total_fixed_annual": ctc_dec,
+        "total_fixed_monthly": total_fixed_monthly,
+        "monthly_ctc": total_fixed_monthly,
+        "ctc_per_month": total_fixed_monthly,
     }
 
     formatted = {}

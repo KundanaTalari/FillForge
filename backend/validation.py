@@ -24,6 +24,10 @@ def detect_variable_type(name: str) -> str:
     Infers variable type from placeholder name based on domain conventions.
     """
     s = name.lower().strip()
+
+    # Amount-in-words placeholders are derived text, not monetary inputs.
+    if "inwords" in s or "_in_words" in s:
+        return "text"
     
     # Check calculated or monetary terms first
     if s in CALCULATED_VARIABLES:
@@ -72,7 +76,8 @@ def detect_variable_type(name: str) -> str:
 
 def is_calculated_variable(name: str) -> bool:
     """Returns True if placeholder is automatically computed by the calculation engine."""
-    return name.lower().strip() in CALCULATED_VARIABLES
+    normalized = name.lower().strip()
+    return normalized in CALCULATED_VARIABLES or normalized in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}
 
 
 def validate_and_normalize_value(field_name: str, var_type: str, value: Any, required: bool = True) -> Tuple[bool, Any, Optional[str]]:

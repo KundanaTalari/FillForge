@@ -27,6 +27,17 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+
     # Generations table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS generations (
@@ -44,6 +55,27 @@ def init_db():
     conn.commit()
     conn.close()
 
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    row = conn.execute("SELECT * FROM users WHERE email = ?", (email.lower(),)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def insert_user(user_id: str, name: str, email: str, salt: str, password_hash: str):
+    conn = get_db_connection()
+    conn.execute(
+        "INSERT INTO users (id, name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, name, email.lower(), salt, password_hash, datetime.utcnow().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
 def insert_document(doc_id: str, name: str, filename: str, placeholders: List[Dict[str, Any]]):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -54,6 +86,12 @@ def insert_document(doc_id: str, name: str, filename: str, placeholders: List[Di
     )
     conn.commit()
     conn.close()
+
+def document_exists(doc_id: str) -> bool:
+    conn = get_db_connection()
+    row = conn.execute("SELECT 1 FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    conn.close()
+    return row is not None
 
 def get_all_documents() -> List[Dict[str, Any]]:
     conn = get_db_connection()
@@ -66,7 +104,7 @@ def get_all_documents() -> List[Dict[str, Any]]:
             "id": r["id"],
             "name": r["name"],
             "filename": r["filename"],
-            "placeholders": json.loads(r["placeholders"]),
+            "placeholders": normalize_placeholders(json.loads(r["placeholders"])),
             "created_at": r["created_at"]
         })
     conn.close()
@@ -84,9 +122,16 @@ def get_document_by_id(doc_id: str) -> Optional[Dict[str, Any]]:
         "id": row["id"],
         "name": row["name"],
         "filename": row["filename"],
-        "placeholders": json.loads(row["placeholders"]),
+        "placeholders": normalize_placeholders(json.loads(row["placeholders"])),
         "created_at": row["created_at"]
     }
+
+def normalize_placeholders(placeholders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Correct metadata saved before amount-in-words fields were recognized."""
+    for placeholder in placeholders:
+        if placeholder.get("name", "").lower() in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}:
+            placeholder.update({"type": "text", "required": False, "calculated": True, "description": "Computed CTC amount in words"})
+    return placeholders
 
 def delete_document_by_id(doc_id: str) -> bool:
     conn = get_db_connection()

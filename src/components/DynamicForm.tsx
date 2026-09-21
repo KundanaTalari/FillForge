@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 import { DocumentMeta, Placeholder, VariableType, CTCBreakdown } from '../types';
 import { calculateCTC, generateDocument, getDocumentPreviewArrayBuffer } from '../services/api';
 import { generatePdfDocument } from '../utils/pdfExport';
+import { amountToIndianRupeesWords } from '../utils/numberToWords';
 import {
   Download,
   FileDown,
@@ -137,18 +138,36 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
     setCalculations(null);
   };
 
-  // Recalculate CTC whenever parameters change
-  useEffect(() => {
-    const ctcVal = formData.ctc_total || formData.salary || formData.ctc;
-    const pfVal = formData.basic_pf ?? 1800;
+  const ctcInputName = document?.placeholders.find((placeholder) =>
+    ['ctc_total', 'salary', 'ctc'].includes(placeholder.name.toLowerCase())
+  )?.name;
+  const basicPfInputName = document?.placeholders.find(
+    (placeholder) => placeholder.name.toLowerCase() === 'basic_pf'
+  )?.name;
+  const ctcValue = ctcInputName ? formData[ctcInputName] : undefined;
+  const basicPfValue = basicPfInputName ? formData[basicPfInputName] : 1800;
+  const ctcInWordsInputName = document?.placeholders.find(
+    (placeholder) => ['ctcinwords', 'ctc_in_words', 'annualcompensationinwords'].includes(placeholder.name.toLowerCase())
+  )?.name;
 
-    if (ctcVal && !isNaN(Number(ctcVal))) {
+  useEffect(() => {
+    if (!ctcInWordsInputName) return;
+    const words = amountToIndianRupeesWords(ctcValue || '');
+    setFormData((previous) => previous[ctcInWordsInputName] === words
+      ? previous
+      : { ...previous, [ctcInWordsInputName]: words });
+  }, [ctcInWordsInputName, ctcValue]);
+
+  // Recalculate CTC whenever the template's CTC input changes. Template
+  // authors use both {{ctc}} and {{CTC}}, so matching is case-insensitive.
+  useEffect(() => {
+    if (ctcValue && !isNaN(Number(ctcValue))) {
       let isCurrent = true;
       setCalcLoading(true);
 
       calculateCTC({
-        ctc_total: Number(ctcVal),
-        basic_pf: Number(pfVal),
+        ctc_total: Number(ctcValue),
+        basic_pf: Number(basicPfValue),
         pf_mode: pfMode,
         pf_percentage: pfPercentage,
         preset,
@@ -173,10 +192,8 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
       setCalculations(null);
     }
   }, [
-    formData.ctc_total,
-    formData.salary,
-    formData.ctc,
-    formData.basic_pf,
+    ctcValue,
+    basicPfValue,
     pfMode,
     pfPercentage,
     preset,
@@ -288,9 +305,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   const inputPlaceholders = document.placeholders.filter((p) => !p.calculated);
   const hasCTC = document.placeholders.some(
     (p) =>
-      p.name === 'ctc_total' ||
-      p.name === 'salary' ||
-      p.name === 'annual_basic' ||
+      ['ctc_total', 'salary', 'ctc', 'annual_basic'].includes(p.name.toLowerCase()) ||
       p.calculated
   );
 

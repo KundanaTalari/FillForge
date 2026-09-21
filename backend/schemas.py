@@ -31,3 +31,12 @@ class BulkGenerateResponse(BaseModel):
     failures: List[FailureItem]
     download_url: Optional[str] = None
     batch_id: Optional[str] = None
+
+class SignUpRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class SignInRequest(BaseModel):
+    email: str
+    password: str

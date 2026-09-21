@@ -3,6 +3,7 @@ import re
 import subprocess
 import shutil
 import zipfile
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from docx import Document
@@ -10,7 +11,7 @@ from docxtpl import DocxTemplate
 
 from storage import get_template_path, get_generated_path, sanitize_filename
 from validation import detect_variable_type, is_calculated_variable, validate_and_normalize_value
-from calculations import calculate_ctc, evaluate_calc_tags, format_inr_currency
+from calculations import calculate_ctc, evaluate_calc_tags, format_inr_currency, amount_to_indian_rupees_words
 
 VAR_REGEX = re.compile(r"\{\{([a-zA-Z0-9_]+)\}\}")
 CALC_REGEX = re.compile(r"\[CALC\((.*?)\)\]")
@@ -119,20 +120,30 @@ def convert_to_pdf(docx_path: Path) -> Path:
     out_dir = docx_path.parent
     expected_pdf = out_dir / (docx_path.stem + ".pdf")
 
-    # Check for libreoffice / soffice command
+    # Check for LibreOffice. Windows commonly does not add it to PATH.
     libreoffice_cmd = None
     for cmd in ("soffice", "libreoffice"):
         if shutil.which(cmd):
             libreoffice_cmd = cmd
             break
 
+    if not libreoffice_cmd and os.name == "nt":
+        for candidate in (
+            Path(os.environ.get("ProgramFiles", r"C:\\Program Files")) / "LibreOffice" / "program" / "soffice.exe",
+            Path(os.environ.get("ProgramFiles(x86)", r"C:\\Program Files (x86)")) / "LibreOffice" / "program" / "soffice.exe",
+        ):
+            if candidate.exists():
+                libreoffice_cmd = str(candidate)
+                break
+
     if not libreoffice_cmd:
         raise RuntimeError(
-            "LibreOffice is not installed or not in PATH. Please install libreoffice (e.g. `apt-get install libreoffice`) to enable PDF conversion."
+            "LibreOffice is not installed or could not be found. Install LibreOffice to enable PDF conversion."
         )
 
     cmd = [
         libreoffice_cmd,
+        f"-env:UserInstallation={Path(tempfile.mkdtemp(prefix='fillforge-lo-profile-')).as_uri()}",
         "--headless",
         "--convert-to", "pdf:writer_pdf_Export",
         "--outdir", str(out_dir),
@@ -165,9 +176,11 @@ def render_document(
     if not template_path.exists():
         raise FileNotFoundError(f"Template not found: {template_path}")
 
-    # Step 1: CTC Calculation if ctc_total or salary provided
-    ctc_val = values.get("ctc_total") or values.get("salary") or values.get("ctc")
-    basic_pf_val = values.get("basic_pf", 1800)
+    # Step 1: CTC Calculation. Templates use both camel/Pascal case (`CTC`)
+    # and snake case (`ctc_total`), so resolve these names case-insensitively.
+    normalized_values = {str(key).lower(): value for key, value in values.items()}
+    ctc_val = normalized_values.get("ctc_total") or normalized_values.get("salary") or normalized_values.get("ctc")
+    basic_pf_val = normalized_values.get("basic_pf", 1800)
 
     # Initialize context with user values
     context: Dict[str, Any] = dict(values)
@@ -175,16 +188,39 @@ def render_document(
     # If CTC value is present, compute complete CTC breakdown
     if ctc_val is not None and str(ctc_val).strip() != "":
         try:
+            ctc_in_words = amount_to_indian_rupees_words(ctc_val)
+            context["CTCInWords"] = ctc_in_words
+            context["ctc_in_words"] = ctc_in_words
             ctc_breakdown = calculate_ctc(
                 ctc_total=ctc_val,
                 basic_pf=basic_pf_val,
                 pf_mode=pf_mode,
-                pf_percentage=pf_percentage
+                pf_percentage=pf_percentage,
+                preset=values.get("ctc_preset", "nichebit"),
+                hra_rate_pct=values.get("hra_rate_pct", 10),
+                insurance_annual=values.get("insurance_annual", 8000),
+                basic_mode=values.get("basic_mode", "statutory_min"),
             )
             # Inject both raw and formatted values
             for k, res in ctc_breakdown.items():
                 context[k] = res["raw_value"]
                 context[f"{k}_formatted"] = res["formatted_value"]
+
+            # Compatibility aliases for the uploaded Nichebit compensation
+            # table, whose placeholders use PascalCase field names.
+            aliases = {
+                "BasicAnnual": "annual_basic", "BasicMonthly": "basic_per_month",
+                "HraAnnual": "annual_hra", "HraMonthly": "hra_per_month",
+                "SpecialAllowanceAnnual": "special_allowance", "SpecialAllowanceMonthly": "monthly_special_allowance",
+                "GrossAnnual": "gross_annual_salary", "GrossMonthly": "gross_monthly_salary",
+                "PFAnnual": "pf_per_year", "PFMonthly": "pf_per_month",
+                "GratuityAnnual": "gratuity_per_year", "GratuityMonthly": "gratuity_per_month",
+                "InsuranceAnnual": "insurance_per_year", "TotalFixedAnnual": "total_fixed_annual",
+                "TotalFixedMonthly": "total_fixed_monthly", "TotalCtcAnnual": "total_fixed_annual",
+                "TotalCtcMonthly": "total_fixed_monthly",
+            }
+            for placeholder, key in aliases.items():
+                context[placeholder] = ctc_breakdown[key]["formatted_value"]
         except Exception as e:
             print(f"Warning during CTC breakdown calculation: {e}")
 
