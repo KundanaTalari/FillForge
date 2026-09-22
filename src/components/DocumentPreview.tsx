@@ -211,6 +211,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const livePdfUrlRef = useRef<string | null>(null);
+  const livePdfRequestRef = useRef<AbortController | null>(null);
 
   const [docxRenderError, setDocxRenderError] = useState<string | null>(null);
 
@@ -334,18 +335,52 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedFormValues(formValues);
-    }, 250);
+    // PDF conversion starts LibreOffice, so wait for a natural pause in
+    // typing rather than launching a conversion for every short keystroke.
+    }, 800);
     return () => clearTimeout(handler);
   }, [formValues]);
+
+  const requiredFields = useMemo(
+    () => (document?.placeholders || []).filter((field) => field.required && !field.calculated),
+    [document?.id]
+  );
+  const hasAllRequiredValues = useCallback((values: Record<string, any>) => (
+    requiredFields.every((field) => {
+      const value = values[field.name];
+      return value !== undefined && value !== null && String(value).trim() !== '';
+    })
+  ), [requiredFields]);
+
+  // Use the current values to stop a request immediately when a required field
+  // is cleared, and the debounced values to ensure the request contains the
+  // exact same complete set of values. Without the second check, the final
+  // field can look complete while the 800ms-debounced payload is still empty.
+  const requiredFieldsComplete = hasAllRequiredValues(formValues);
+  const debouncedRequiredFieldsComplete = hasAllRequiredValues(debouncedFormValues);
 
   // PDF Print is the faithful preview. Generate it from current form values
   // after typing settles instead of always showing the raw uploaded template.
   useEffect(() => {
-    if (!document || showOriginalUploaded || activeTab !== 'preview' || viewMode !== 'single' || previewFidelity !== 'pdf') {
+    if (
+      !document ||
+      !requiredFieldsComplete ||
+      !debouncedRequiredFieldsComplete ||
+      showOriginalUploaded ||
+      activeTab !== 'preview' ||
+      viewMode !== 'single' ||
+      previewFidelity !== 'pdf'
+    ) {
+      livePdfRequestRef.current?.abort();
+      livePdfRequestRef.current = null;
+      setRenderingPdf(false);
       return;
     }
 
     let cancelled = false;
+    livePdfRequestRef.current?.abort();
+    const controller = new AbortController();
+    livePdfRequestRef.current = controller;
     setRenderingPdf(true);
     setPdfPreviewError(null);
 
@@ -356,7 +391,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           values: debouncedFormValues,
           pf_mode: 'fixed',
           pf_percentage: 12,
-        });
+        }, controller.signal);
         if (cancelled) return;
 
         const nextUrl = URL.createObjectURL(blob);
@@ -365,19 +400,26 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         setLivePdfUrl(nextUrl);
         if (previousUrl) URL.revokeObjectURL(previousUrl);
       } catch (err: any) {
-        if (!cancelled) setPdfPreviewError(err?.message || 'Unable to update the live PDF preview.');
+        if (!cancelled && err?.code !== 'ERR_CANCELED') {
+          setPdfPreviewError(err?.message || 'Unable to update the live PDF preview.');
+        }
       } finally {
-        if (!cancelled) setRenderingPdf(false);
+        if (!cancelled && livePdfRequestRef.current === controller) {
+          setRenderingPdf(false);
+          livePdfRequestRef.current = null;
+        }
       }
     };
 
     renderLivePdf();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [document?.id, debouncedFormValues, showOriginalUploaded, activeTab, viewMode, previewFidelity]);
+  }, [document?.id, debouncedFormValues, requiredFieldsComplete, debouncedRequiredFieldsComplete, showOriginalUploaded, activeTab, viewMode, previewFidelity]);
 
   useEffect(() => () => {
+    livePdfRequestRef.current?.abort();
     if (livePdfUrlRef.current) URL.revokeObjectURL(livePdfUrlRef.current);
   }, []);
 
@@ -543,6 +585,19 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   // Quick download helper
   const handleQuickDownload = async (doc: DocumentMeta, format: 'docx' | 'pdf') => {
+    const missingFields = doc.placeholders
+      .filter((field) => field.required && !field.calculated)
+      .filter((field) => {
+        const value = formValues[field.name];
+        return value === undefined || value === null || String(value).trim() === '';
+      })
+      .map((field) => field.name);
+
+    if (missingFields.length > 0) {
+      alert(`Please complete the required field${missingFields.length === 1 ? '' : 's'}: ${missingFields.join(', ')}`);
+      return;
+    }
+
     try {
       setDownloadingDocId(doc.id);
 
@@ -570,7 +625,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const currentRawHtml = document ? htmlCache[document.id] || '' : '';
   const pdfPreviewSrc = document
-    ? showOriginalUploaded || !livePdfUrl
+    ? showOriginalUploaded || !requiredFieldsComplete || !livePdfUrl
       ? `/documents/${document.id}/preview-pdf`
       : livePdfUrl
     : '';

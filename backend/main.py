@@ -12,8 +12,8 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
 
-from db import init_db, insert_document, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
-from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, GENERATED_DIR
+from db import init_db, insert_document, update_document_placeholders, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
+from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, person_document_name, GENERATED_DIR
 from generation import extract_placeholders_from_docx, render_document, convert_to_pdf
 from bulk import generate_sample_sheet, process_bulk_generation
 from calculations import calculate_ctc
@@ -63,6 +63,7 @@ def on_startup():
     # The legacy JSON import was a one-time migration. Re-running it on every
     # startup resurrected templates that users had already deleted.
     cleanup_missing_template_records()
+    refresh_template_placeholders()
 
 @app.get("/health")
 def health_check():
@@ -73,6 +74,18 @@ def cleanup_missing_template_records():
     for document in get_all_documents():
         if not get_template_path(document["filename"]).exists():
             delete_document_by_id(document["id"])
+
+def refresh_template_placeholders():
+    """Add fields discovered by newer placeholder extraction rules."""
+    for document in get_all_documents():
+        template_path = get_template_path(document["filename"])
+        if not template_path.exists():
+            continue
+        extracted = extract_placeholders_from_docx(template_path)
+        saved_names = {field["name"] for field in document["placeholders"]}
+        extracted_names = {field["name"] for field in extracted}
+        if extracted_names != saved_names:
+            update_document_placeholders(document["id"], extracted)
 
 @app.post("/auth/signup")
 def signup(payload: SignUpRequest, response: Response):
@@ -283,13 +296,7 @@ async def generate_document(doc_id: str, request: GenerateRequest):
         raise HTTPException(status_code=422, detail={"errors": validation_errors})
 
     # Prepare file naming
-    first_n = validated_values.get("first_name") or ""
-    last_n = validated_values.get("last_name") or ""
-    emp_id = validated_values.get("employee_id") or ""
-    stem = Path(doc["name"]).stem
-    
-    parts = [p for p in [stem, emp_id, first_n, last_n] if p]
-    base_name = sanitize_filename("_".join(parts) or "generated_document")
+    base_name = person_document_name(validated_values, doc["name"])
     gen_id = str(uuid.uuid4())
     unique_base = f"{base_name}_{gen_id[:8]}"
 
@@ -363,7 +370,8 @@ async def bulk_generate(
             placeholders=doc["placeholders"],
             output_format=format,
             pf_mode=pf_mode,
-            pf_percentage=pf_percentage
+            pf_percentage=pf_percentage,
+            download_filename=f"{sanitize_filename(Path(doc['name']).stem)}_Bulk_{format.lower()}.zip"
         )
         return result
     except Exception as e:

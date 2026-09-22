@@ -2,13 +2,19 @@ import io
 import csv
 import zipfile
 import uuid
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import pandas as pd
 
-from storage import get_template_path, get_bulk_path, sanitize_filename
+from storage import get_template_path, get_bulk_path, sanitize_filename, person_document_name
 from validation import validate_and_normalize_value, is_calculated_variable
 from generation import render_document
+
+
+def normalize_column_name(name: Any) -> str:
+    """Match spreadsheet headers such as `Full Name`, `full_name`, and `FullName`."""
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
 
 def generate_sample_sheet(placeholders: List[Dict[str, Any]]) -> str:
     """
@@ -83,7 +89,8 @@ def process_bulk_generation(
     placeholders: List[Dict[str, Any]],
     output_format: str = "pdf",
     pf_mode: str = "fixed",
-    pf_percentage: float = 12.0
+    pf_percentage: float = 12.0,
+    download_filename: str | None = None,
 ) -> Dict[str, Any]:
     """
     Parses CSV/XLSX bytes, processes each row individually, and packages results into a ZIP.
@@ -113,9 +120,14 @@ def process_bulk_generation(
     failed = 0
     failures = []
     generated_files: List[Tuple[str, Path]] = []
+    used_archive_names = set()
 
-    # Map placeholders for quick validation lookup
+    # Map placeholders for quick validation lookup. Spreadsheet headings are
+    # often written with spaces, while DOCX fields tend to be camelCase.
     placeholder_map = {p["name"]: p for p in placeholders}
+    spreadsheet_columns = {
+        normalize_column_name(column): column for column in df.columns
+    }
 
     for idx, row in enumerate(rows, start=1):
         row_clean = {}
@@ -128,6 +140,14 @@ def process_bulk_generation(
             else:
                 row_clean[k] = v
 
+        # Copy equivalent spreadsheet columns to the exact DOCX placeholder
+        # name used by rendering and filename generation.
+        for p_name in placeholder_map:
+            if p_name not in row_clean:
+                source_column = spreadsheet_columns.get(normalize_column_name(p_name))
+                if source_column is not None:
+                    row_clean[p_name] = row_clean.get(source_column)
+
         # Validate fields
         for p_name, p_meta in placeholder_map.items():
             if p_meta.get("calculated", False):
@@ -135,7 +155,7 @@ def process_bulk_generation(
 
             val = row_clean.get(p_name)
             # If the column was omitted in the sheet, treat as optional
-            is_col_present = p_name in df.columns
+            is_col_present = normalize_column_name(p_name) in spreadsheet_columns
             is_req = p_meta.get("required", True) and is_col_present
 
             is_valid, norm_val, err = validate_and_normalize_value(
@@ -158,17 +178,12 @@ def process_bulk_generation(
             })
             continue
 
-        # Formulate naming: John_Doe or EMP-1001_John or record_1
-        first_n = row_clean.get("first_name") or ""
-        last_n = row_clean.get("last_name") or ""
-        emp_id = row_clean.get("employee_id") or ""
-
-        name_parts = [p for p in [emp_id, first_n, last_n] if p]
-        if name_parts:
-            base_name = "_".join(name_parts)
-        else:
+        # Use each employee's Name and Designation, including templates whose
+        # fields are written as {{Name}} / {{Designation}} rather than snake case.
+        # The template name is only used if the spreadsheet has neither value.
+        base_name = person_document_name(row_clean, template_path.stem)
+        if not base_name or base_name == "document":
             base_name = f"record_{idx}"
-        
         base_name = sanitize_filename(f"{base_name}_{uuid.uuid4().hex[:6]}")
 
         try:
@@ -182,7 +197,15 @@ def process_bulk_generation(
             )
             # Meaningful archive name
             ext = ".pdf" if output_format.lower() == "pdf" else ".docx"
-            archive_name = f"{sanitize_filename('_'.join(name_parts) or f'record_{idx}')}{ext}"
+            archive_stem = person_document_name(row_clean, template_path.stem)
+            if not archive_stem or archive_stem == "document":
+                archive_stem = f"record_{idx}"
+            archive_name = f"{archive_stem}{ext}"
+            duplicate = 2
+            while archive_name.lower() in used_archive_names:
+                archive_name = f"{archive_stem}_{duplicate}{ext}"
+                duplicate += 1
+            used_archive_names.add(archive_name.lower())
             generated_files.append((archive_name, out_file))
             succeeded += 1
         except Exception as e:
@@ -204,5 +227,6 @@ def process_bulk_generation(
         "failed": failed,
         "failures": failures,
         "batch_id": batch_id if succeeded > 0 else None,
-        "download_url": f"/documents/download-bulk/{batch_id}" if succeeded > 0 else None
+        "download_url": f"/documents/download-bulk/{batch_id}" if succeeded > 0 else None,
+        "download_filename": download_filename if succeeded > 0 else None,
     }

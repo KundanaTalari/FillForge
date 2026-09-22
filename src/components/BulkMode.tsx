@@ -223,11 +223,8 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
       const blob = await downloadBulkZip(result.download_url);
       const url = window.URL.createObjectURL(blob);
       const link = window.document.createElement('a');
-      const baseDocName = (document?.name || 'document')
-        .replace(/\.docx$/i, '')
-        .replace(/[^a-zA-Z0-9_-]/g, '_');
       link.href = url;
-      link.download = `bulk_${baseDocName}_${format}.zip`;
+      link.download = result.download_filename || `FillForge_Bulk_${format}.zip`;
       window.document.body.appendChild(link);
       link.click();
       link.remove();

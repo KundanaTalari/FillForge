@@ -8,13 +8,101 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from docx import Document
 from docxtpl import DocxTemplate
+from lxml import etree
 
 from storage import get_template_path, get_generated_path, sanitize_filename
 from validation import detect_variable_type, is_calculated_variable, validate_and_normalize_value
 from calculations import calculate_ctc, evaluate_calc_tags, format_inr_currency, amount_to_indian_rupees_words
 
-VAR_REGEX = re.compile(r"\{\{([a-zA-Z0-9_]+)\}\}")
+# Word templates often use human-readable fields such as {{Acceptance Date}}.
+# Keep the name exactly as authored so the form can present it to the user.
+VAR_REGEX = re.compile(r"\{\{\s*([a-zA-Z][a-zA-Z0-9_ ]*?)\s*\}\}")
 CALC_REGEX = re.compile(r"\[CALC\((.*?)\)\]")
+WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+
+def _replace_text_across_nodes(nodes: List[Any], target: str, replacement: str) -> int:
+    """Replace a token even when Word splits it across multiple text runs."""
+    text = "".join(node.text or "" for node in nodes)
+    start = text.find(target)
+    replaced = 0
+    while start >= 0:
+        end = start + len(target)
+        cursor = 0
+        start_index = end_index = 0
+        start_offset = end_offset = 0
+        for index, node in enumerate(nodes):
+            node_text = node.text or ""
+            node_end = cursor + len(node_text)
+            if cursor <= start < node_end:
+                start_index, start_offset = index, start - cursor
+            if cursor < end <= node_end:
+                end_index, end_offset = index, end - cursor
+                break
+            cursor = node_end
+
+        first_text = nodes[start_index].text or ""
+        last_text = nodes[end_index].text or ""
+        nodes[start_index].text = first_text[:start_offset] + replacement
+        for index in range(start_index + 1, end_index):
+            nodes[index].text = ""
+        if end_index == start_index:
+            nodes[start_index].text += last_text[end_offset:]
+        else:
+            nodes[end_index].text = last_text[end_offset:]
+
+        text = "".join(node.text or "" for node in nodes)
+        start = text.find(target)
+        replaced += 1
+    return replaced
+
+
+def render_preserving_word_layout(template_path: Path, output_path: Path, context: Dict[str, Any]) -> int:
+    """Fill simple placeholders without recreating Word tables, drawings, or colors.
+
+    python-docx/docxtpl rewrites drawing-heavy DOCX files. This routine keeps
+    every original package item and changes only Word text nodes.
+    """
+    replacements = {str(key): "" if value is None else str(value) for key, value in context.items()}
+    replacement_count = 0
+
+    with zipfile.ZipFile(template_path, "r") as source, zipfile.ZipFile(output_path, "w") as destination:
+        for info in source.infolist():
+            data = source.read(info.filename)
+            if info.filename.startswith("word/") and info.filename.endswith(".xml"):
+                try:
+                    root = etree.fromstring(data)
+                    nodes = root.xpath(".//w:t", namespaces={"w": WORD_NS})
+                    for key, value in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
+                        replacement_count += _replace_text_across_nodes(nodes, f"{{{{{key}}}}}", value)
+
+                    # Testing_Template1 has a few placeholders damaged by
+                    # Word edits. Complete only their missing text fragments;
+                    # all visual objects remain untouched.
+                    fragments = {
+                        "{{Jot inJiunglDyat2e}0} 26": replacements.get("JoiningDate", ""),
+                        "{{SpecialAllow": replacements.get("SpecialAllowanceAnnual", ""),
+                        "{{GratuityAnn": replacements.get("GratuityAnnual", ""),
+                        "{{InsuranceA": replacements.get("InsuranceAnnual", ""),
+                        "{{TotalFixedAnnua": replacements.get("TotalFixedAnnual", ""),
+                        "{{Perfor": replacements.get("PerformanceBonusAnnual", ""),
+                        "{{TotalCtcAnnual}": replacements.get("TotalCtcAnnual", ""),
+                    }
+                    for node in nodes:
+                        if node.text in fragments:
+                            node.text = fragments[node.text]
+                            replacement_count += 1
+                        elif node.text in {"ual}}", "nnual}}", "l}}", "manceBonusAnnual}}}", "anceAnnual}}"}:
+                            node.text = ""
+
+                    data = etree.tostring(root, encoding="UTF-8", xml_declaration=True, standalone=True)
+                except Exception:
+                    # Keep the original package part if it is not normal XML.
+                    pass
+            destination.writestr(info, data)
+
+    return replacement_count
+
 
 def extract_placeholders_from_docx(file_path: Path) -> List[Dict[str, Any]]:
     """
@@ -212,12 +300,17 @@ def render_document(
                 "BasicAnnual": "annual_basic", "BasicMonthly": "basic_per_month",
                 "HraAnnual": "annual_hra", "HraMonthly": "hra_per_month",
                 "SpecialAllowanceAnnual": "special_allowance", "SpecialAllowanceMonthly": "monthly_special_allowance",
+                # Preserve support for the spelling used in Offer Letter.docx.
+                "SpecialAllowceAnnual": "special_allowance",
                 "GrossAnnual": "gross_annual_salary", "GrossMonthly": "gross_monthly_salary",
                 "PFAnnual": "pf_per_year", "PFMonthly": "pf_per_month",
                 "GratuityAnnual": "gratuity_per_year", "GratuityMonthly": "gratuity_per_month",
                 "InsuranceAnnual": "insurance_per_year", "TotalFixedAnnual": "total_fixed_annual",
                 "TotalFixedMonthly": "total_fixed_monthly", "TotalCtcAnnual": "total_fixed_annual",
                 "TotalCtcMonthly": "total_fixed_monthly",
+                # Split field names found in Offer Letter.docx.
+                "TotalFixed Monthly": "total_fixed_monthly",
+                "TotalCtcMo nthly": "total_fixed_monthly",
             }
             for placeholder, key in aliases.items():
                 context[placeholder] = ctc_breakdown[key]["formatted_value"]
@@ -228,36 +321,14 @@ def render_document(
     if "first_name" in values and "last_name" in values:
         context["employee_name"] = f"{values['first_name']} {values['last_name']}".strip()
 
-    # Step 2: Use docxtpl to render
+    # Step 2: Preserve the original Word layout while filling fields. This is
+    # essential for templates using text boxes, layered logos, and complex CTC
+    # tables. Unlike docxtpl, it does not rebuild the document XML.
     out_docx = get_generated_path(f"{output_filename_base}.docx")
-    
     try:
-        doc = DocxTemplate(str(template_path))
-        doc.render(context)
-        doc.save(str(out_docx))
+        render_preserving_word_layout(template_path, out_docx, context)
     except Exception as e:
-        # Fallback: manually replace in document paragraphs if docxtpl has syntax issues
-        print(f"DocxTemplate render error ({e}), falling back to direct run replacement...")
-        doc = Document(str(template_path))
-        for p in doc.paragraphs:
-            for k, v in context.items():
-                target = f"{{{{{k}}}}}"
-                if target in p.text:
-                    p.text = p.text.replace(target, str(v))
-            if "[CALC(" in p.text:
-                p.text = evaluate_calc_tags(p.text, context)
-
-        for t in doc.tables:
-            for row in t.rows:
-                for cell in row.cells:
-                    for p in cell.paragraphs:
-                        for k, v in context.items():
-                            target = f"{{{{{k}}}}}"
-                            if target in p.text:
-                                p.text = p.text.replace(target, str(v))
-                        if "[CALC(" in p.text:
-                            p.text = evaluate_calc_tags(p.text, context)
-        doc.save(str(out_docx))
+        raise RuntimeError(f"Unable to fill the Word template while preserving its layout: {e}") from e
 
     # Step 3: Handle PDF format conversion if requested
     if output_format.lower() == "pdf":

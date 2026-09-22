@@ -16,6 +16,21 @@ CALCULATED_VARIABLES = {
     "monthly_special_allowance",
 }
 
+# Friendly placeholder names commonly used in offer-letter compensation tables.
+# These are outputs of CTC, never fields an employee should type manually.
+CTC_BREAKDOWN_VARIABLES = {
+    "basicannual", "basicmonthly",
+    "hraannual", "hramonthly",
+    "specialallowanceannual", "specialallowancemonthly", "specialallowceannual",
+    "grossannual", "grossmonthly",
+    "pfannual", "pfmonthly",
+    "gratuityannual", "gratuitymonthly",
+    "insuranceannual", "insurancemonthly",
+    "totalfixedannual", "totalfixedmonthly",
+    "totalctcannual", "totalctcmonthly",
+    "performancebonusannual", "performancebonusmonthly",
+}
+
 EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+$")
 PHONE_REGEX = re.compile(r"^[\+]?[0-9\s\-\(\)]{7,18}$")
 
@@ -24,6 +39,11 @@ def detect_variable_type(name: str) -> str:
     Infers variable type from placeholder name based on domain conventions.
     """
     s = name.lower().strip()
+    # Split `ReportingManager`, `employee_age`, and `employee-age` into
+    # semantic tokens. Never use raw substring matching for `age`: it appears
+    # inside normal words such as ManAGER and enGAGEment.
+    tokens = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower().replace("-", "_").split("_")
+    token_set = {token for token in tokens if token}
 
     # Amount-in-words placeholders are derived text, not monetary inputs.
     if "inwords" in s or "_in_words" in s:
@@ -67,7 +87,7 @@ def detect_variable_type(name: str) -> str:
         return "boolean"
 
     # Numbers
-    if any(k in s for k in ["count", "qty", "quantity", "age", "years", "months", "days", "number", "num", "score", "rank"]):
+    if token_set.intersection({"count", "qty", "quantity", "age", "years", "months", "days", "number", "num", "score", "rank"}):
         return "number"
 
     # Default
@@ -77,7 +97,12 @@ def detect_variable_type(name: str) -> str:
 def is_calculated_variable(name: str) -> bool:
     """Returns True if placeholder is automatically computed by the calculation engine."""
     normalized = name.lower().strip()
-    return normalized in CALCULATED_VARIABLES or normalized in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}
+    compact = re.sub(r"[^a-z0-9]", "", normalized)
+    return (
+        normalized in CALCULATED_VARIABLES
+        or compact in CTC_BREAKDOWN_VARIABLES
+        or normalized in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}
+    )
 
 
 def validate_and_normalize_value(field_name: str, var_type: str, value: Any, required: bool = True) -> Tuple[bool, Any, Optional[str]]:

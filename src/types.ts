@@ -43,5 +43,6 @@ export interface BulkResult {
   failed: number;
   failures: BulkFailure[];
   download_url?: string | null;
+  download_filename?: string | null;
   batch_id?: string | null;
 }

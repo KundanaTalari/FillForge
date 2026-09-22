@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from validation import is_calculated_variable
 
 DB_PATH = Path("storage/fillforge.db")
 
@@ -87,6 +88,17 @@ def insert_document(doc_id: str, name: str, filename: str, placeholders: List[Di
     conn.commit()
     conn.close()
 
+def update_document_placeholders(doc_id: str, placeholders: List[Dict[str, Any]]):
+    """Refresh extracted template fields after parser improvements."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE documents SET placeholders = ? WHERE id = ?",
+        (json.dumps(placeholders), doc_id),
+    )
+    conn.commit()
+    conn.close()
+
 def document_exists(doc_id: str) -> bool:
     conn = get_db_connection()
     row = conn.execute("SELECT 1 FROM documents WHERE id = ?", (doc_id,)).fetchone()
@@ -129,8 +141,20 @@ def get_document_by_id(doc_id: str) -> Optional[Dict[str, Any]]:
 def normalize_placeholders(placeholders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Correct metadata saved before amount-in-words fields were recognized."""
     for placeholder in placeholders:
-        if placeholder.get("name", "").lower() in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}:
+        name = placeholder.get("name", "")
+        if name.lower() in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}:
             placeholder.update({"type": "text", "required": False, "calculated": True, "description": "Computed CTC amount in words"})
+        elif is_calculated_variable(name):
+            placeholder.update({
+                "type": "currency",
+                "required": False,
+                "calculated": True,
+                "description": "Calculated automatically from CTC",
+            })
+        # Correct metadata saved by the former substring-based type detector,
+        # which read the `age` in ManAGER / enGAGEment as a numeric age field.
+        elif name.lower() in {"reportingmanager", "reportingmanagerdesignation", "engagementtype"}:
+            placeholder["type"] = "text"
     return placeholders
 
 def delete_document_by_id(doc_id: str) -> bool:

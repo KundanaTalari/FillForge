@@ -94,10 +94,12 @@ export const generateDocument = async (
     values: Record<string, any>;
     pf_mode?: 'fixed' | 'percentage';
     pf_percentage?: number;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<{ blob: Blob; filename: string }> => {
   const res = await api.post(`/documents/${id}/generate`, payload, {
     responseType: 'blob',
+    signal,
   });
 
   // Extract filename from Content-Disposition header if present
