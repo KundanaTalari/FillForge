@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import mammoth from 'mammoth';
 import { DocumentMeta, Placeholder, VariableType, CTCBreakdown } from '../types';
-import { calculateCTC, generateDocument, getDocumentPreviewArrayBuffer } from '../services/api';
-import { generatePdfDocument } from '../utils/pdfExport';
+import { calculateCTC, generateDocument } from '../services/api';
 import { amountToIndianRupeesWords } from '../utils/numberToWords';
 import {
   Download,
@@ -251,35 +249,8 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
         if (onGenerationSuccess) onGenerationSuccess(filename);
         return;
       } catch (serverErr: any) {
-        // If it's a validation error from server (400), don't fallback to client
-        if (serverErr.response && serverErr.response.status === 400) {
-          throw serverErr;
-        }
-
-        // Offline / network fallback for PDF
-        if (format === 'pdf') {
-          console.warn('Server generation failed, attempting client-side fallback:', serverErr);
-          const buffer = await getDocumentPreviewArrayBuffer(document.id);
-          const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-          const rawHtml = result.value || '';
-
-          const { filename } = await generatePdfDocument({
-            document,
-            rawHtml,
-            formValues: {
-              ...formData,
-              ctc_preset: preset,
-              hra_rate_pct: hraRatePct,
-              insurance_annual: insuranceAnnual,
-              basic_mode: basicMode,
-            },
-            calculatedValues: calculations,
-          });
-
-          setSuccessMsg(`Successfully generated and downloaded ${filename}`);
-          if (onGenerationSuccess) onGenerationSuccess(filename);
-          return;
-        }
+        // FastAPI + LibreOffice is the single document-generation path. The
+        // former browser fallback produced a different layout from the DOCX.
         throw serverErr;
       }
     } catch (err: any) {

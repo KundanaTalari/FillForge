@@ -2,7 +2,9 @@ import axios from 'axios';
 import { DocumentMeta, CTCBreakdown, BulkResult } from '../types';
 
 const api = axios.create({
-  baseURL: '', // Uses relative paths, intercepted by dev proxy or express
+  // Empty locally: Vite forwards requests to FastAPI. Set VITE_API_BASE_URL
+  // after deploying frontend and backend on separate domains.
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 120000,
   withCredentials: true,
 });

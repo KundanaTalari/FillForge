@@ -5,7 +5,9 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from validation import is_calculated_variable
 
-DB_PATH = Path("storage/fillforge.db")
+# The SQLite database belongs to the backend, not the frontend's working
+# directory. This makes local development and deployment deterministic.
+DB_PATH = Path(__file__).resolve().parent / "storage" / "fillforge.db"
 
 def get_db_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

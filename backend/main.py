@@ -22,10 +22,18 @@ from schemas import GenerateRequest, BulkGenerateResponse, SignUpRequest, SignIn
 
 app = FastAPI(title="FillForge API", version="1.0.0")
 
+# Comma-separated frontend URLs for deployed environments. Local Vite is
+# included by default so `npm run dev` continues to work out of the box.
+FRONTEND_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+
 # Enable CORS for local Vite development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

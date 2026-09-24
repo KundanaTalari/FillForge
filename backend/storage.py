@@ -1,7 +1,10 @@
 import re
 from pathlib import Path
 
-STORAGE_BASE = Path("storage")
+# Keep documents, generated files, and archives inside the backend regardless
+# of the terminal folder used to start Uvicorn.
+BACKEND_DIR = Path(__file__).resolve().parent
+STORAGE_BASE = BACKEND_DIR / "storage"
 TEMPLATES_DIR = STORAGE_BASE / "templates"
 GENERATED_DIR = STORAGE_BASE / "generated"
 BULK_DIR = STORAGE_BASE / "bulk"
