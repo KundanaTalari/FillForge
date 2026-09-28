@@ -15,8 +15,8 @@ from fastapi.responses import FileResponse, Response, JSONResponse
 from db import init_db, insert_document, update_document_placeholders, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
 from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, person_document_name, GENERATED_DIR
 from generation import extract_placeholders_from_docx, render_document, convert_to_pdf
+from formula_engine import FormulaError
 from bulk import generate_sample_sheet, process_bulk_generation
-from calculations import calculate_ctc
 from validation import validate_and_normalize_value, is_calculated_variable
 from schemas import GenerateRequest, BulkGenerateResponse, SignUpRequest, SignInRequest
 
@@ -90,10 +90,9 @@ def refresh_template_placeholders():
         if not template_path.exists():
             continue
         extracted = extract_placeholders_from_docx(template_path)
-        saved_names = {field["name"] for field in document["placeholders"]}
-        extracted_names = {field["name"] for field in extracted}
-        if extracted_names != saved_names:
-            update_document_placeholders(document["id"], extracted)
+        # Rebuild metadata on startup so formula targets immediately become
+        # calculated fields when a template's formulas change.
+        update_document_placeholders(document["id"], extracted)
 
 @app.post("/auth/signup")
 def signup(payload: SignUpRequest, response: Response):
@@ -244,29 +243,10 @@ def delete_document(doc_id: str):
 
 @app.post("/calculate")
 def live_calculation(payload: Dict[str, Any]):
-    """
-    Computes live CTC calculations for immediate UI feedback.
-    Never relies solely on frontend calculations.
-    """
-    ctc = payload.get("ctc_total", 0)
-    pf = payload.get("basic_pf", 1800)
-    mode = payload.get("pf_mode", "fixed")
-    pct = payload.get("pf_percentage", 12)
-
-    try:
-        breakdown = calculate_ctc(
-            ctc_total=ctc,
-            basic_pf=pf,
-            pf_mode=mode,
-            pf_percentage=pct,
-            preset=payload.get("preset", "nichebit"),
-            hra_rate_pct=payload.get("hra_rate_pct", 10),
-            insurance_annual=payload.get("insurance_annual", 8000),
-            basic_mode=payload.get("basic_mode", "statutory_min"),
-        )
-        return breakdown
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Calculation error: {str(e)}")
+    raise HTTPException(
+        status_code=410,
+        detail="The legacy salary calculator was removed. Add [CALC(...)] formulas to the DOCX template.",
+    )
 
 @app.post("/documents/{doc_id}/generate")
 async def generate_document(doc_id: str, request: GenerateRequest):
@@ -318,6 +298,10 @@ async def generate_document(doc_id: str, request: GenerateRequest):
             pf_mode=request.pf_mode,
             pf_percentage=request.pf_percentage
         )
+    except FormulaError as e:
+        # A template author needs to correct this formula; returning 422 lets
+        # the UI show the useful message instead of a generic server error.
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Document generation failed: {str(e)}")
 

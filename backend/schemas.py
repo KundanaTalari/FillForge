@@ -7,6 +7,7 @@ class PlaceholderItem(BaseModel):
     required: bool = True
     calculated: bool = False
     description: Optional[str] = None
+    options: Optional[List[str]] = None
 
 class DocumentResponse(BaseModel):
     id: str

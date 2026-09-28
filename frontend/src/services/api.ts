@@ -99,22 +99,39 @@ export const generateDocument = async (
   },
   signal?: AbortSignal
 ): Promise<{ blob: Blob; filename: string }> => {
-  const res = await api.post(`/documents/${id}/generate`, payload, {
-    responseType: 'blob',
-    signal,
-  });
+  try {
+    const res = await api.post(`/documents/${id}/generate`, payload, {
+      // This is a file when generation succeeds, but FastAPI returns JSON for errors.
+      responseType: 'blob',
+      signal,
+    });
 
-  // Extract filename from Content-Disposition header if present
-  let filename = `generated_document.${payload.format}`;
-  const disposition = res.headers['content-disposition'];
-  if (disposition) {
-    const match = disposition.match(/filename="?([^";]+)"?/i);
-    if (match && match[1]) {
-      filename = match[1];
+    // Extract filename from Content-Disposition header if present
+    let filename = `generated_document.${payload.format}`;
+    const disposition = res.headers['content-disposition'];
+    if (disposition) {
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      if (match && match[1]) {
+        filename = match[1];
+      }
     }
-  }
 
-  return { blob: res.data, filename };
+    return { blob: res.data, filename };
+  } catch (error: any) {
+    // With responseType "blob", Axios wraps a 422 JSON response in a Blob too.
+    // Decode it so the page tells the user which formula needs correction.
+    const responseBody = error?.response?.data;
+    if (responseBody instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await responseBody.text());
+        if (typeof parsed?.detail === 'string') error.message = parsed.detail;
+        error.response.data = parsed;
+      } catch {
+        // Retain the original Axios error if the server did not send JSON.
+      }
+    }
+    throw error;
+  }
 };
 
 export const getSampleSheetUrl = (id: string) => `/documents/${id}/sample-sheet`;
