@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from validation import is_calculated_variable
 
 # The SQLite database belongs to the backend, not the frontend's working
 # directory. This makes local development and deployment deterministic.
@@ -141,21 +140,12 @@ def get_document_by_id(doc_id: str) -> Optional[Dict[str, Any]]:
     }
 
 def normalize_placeholders(placeholders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Correct metadata saved before amount-in-words fields were recognized."""
+    """Apply only general metadata corrections to saved template fields."""
     for placeholder in placeholders:
         name = placeholder.get("name", "")
-        if name.lower() in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}:
-            placeholder.update({"type": "text", "required": False, "calculated": True, "description": "Computed CTC amount in words"})
-        elif is_calculated_variable(name):
-            placeholder.update({
-                "type": "currency",
-                "required": False,
-                "calculated": True,
-                "description": "Calculated automatically from CTC",
-            })
         # Correct metadata saved by the former substring-based type detector,
         # which read the `age` in ManAGER / enGAGEment as a numeric age field.
-        elif name.lower() in {"reportingmanager", "reportingmanagerdesignation", "engagementtype"}:
+        if name.lower() in {"reportingmanager", "reportingmanagerdesignation", "engagementtype"}:
             placeholder["type"] = "text"
     return placeholders
 

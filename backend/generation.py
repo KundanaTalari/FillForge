@@ -12,7 +12,13 @@ from lxml import etree
 
 from storage import get_template_path, get_generated_path, sanitize_filename
 from validation import detect_variable_type, is_calculated_variable, validate_and_normalize_value
-from calculations import calculate_ctc, evaluate_calc_tags, format_inr_currency, amount_to_indian_rupees_words
+from formula_engine import (
+    FormulaError,
+    evaluate_template_formulas,
+    extract_select_blocks_from_docx,
+    formula_targets,
+    select_fields,
+)
 
 # Word templates often use human-readable fields such as {{Acceptance Date}}.
 # Keep the name exactly as authored so the form can present it to the user.
@@ -57,7 +63,13 @@ def _replace_text_across_nodes(nodes: List[Any], target: str, replacement: str) 
     return replaced
 
 
-def render_preserving_word_layout(template_path: Path, output_path: Path, context: Dict[str, Any]) -> int:
+def render_preserving_word_layout(
+    template_path: Path,
+    output_path: Path,
+    context: Dict[str, Any],
+    formula_replacements: Optional[Dict[str, str]] = None,
+    select_replacements: Optional[Dict[str, str]] = None,
+) -> int:
     """Fill simple placeholders without recreating Word tables, drawings, or colors.
 
     python-docx/docxtpl rewrites drawing-heavy DOCX files. This routine keeps
@@ -73,6 +85,10 @@ def render_preserving_word_layout(template_path: Path, output_path: Path, contex
                 try:
                     root = etree.fromstring(data)
                     nodes = root.xpath(".//w:t", namespaces={"w": WORD_NS})
+                    for formula, value in (formula_replacements or {}).items():
+                        replacement_count += _replace_text_across_nodes(nodes, formula, value)
+                    for select_tag, value in (select_replacements or {}).items():
+                        replacement_count += _replace_text_across_nodes(nodes, select_tag, value)
                     for key, value in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
                         replacement_count += _replace_text_across_nodes(nodes, f"{{{{{key}}}}}", value)
 
@@ -163,6 +179,18 @@ def extract_placeholders_from_docx(file_path: Path) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"Warning during docx scan: {e}")
 
+    # Named formula fields are calculated by the template, not supplied by a
+    # user. Example: [CALC(basic_monthly = {{ctc_total}} / 24)].
+    formula_targets_set = set()
+    dropdown_fields: Dict[str, Tuple[str, ...]] = {}
+    try:
+        formula_targets_set = formula_targets(file_path)
+        detected_vars.update(formula_targets_set)
+        dropdown_fields = select_fields(file_path)
+        detected_vars.update(dropdown_fields)
+    except FormulaError as exc:
+        print(f"Warning during formula extraction: {exc}")
+
     # Build placeholder items
     placeholders = []
     # Deterministic sort: non-calculated first, then calculated
@@ -176,7 +204,7 @@ def extract_placeholders_from_docx(file_path: Path) -> List[Dict[str, Any]]:
     ]
     
     def sort_key(name: str):
-        is_calc = is_calculated_variable(name)
+        is_calc = name in formula_targets_set
         pri = priority_order.index(name) if name in priority_order else 999
         return (1 if is_calc else 0, pri, name)
 
@@ -184,13 +212,14 @@ def extract_placeholders_from_docx(file_path: Path) -> List[Dict[str, Any]]:
 
     for var in sorted_vars:
         v_type = detect_variable_type(var)
-        calc = is_calculated_variable(var)
+        calc = var in formula_targets_set
         placeholders.append({
             "name": var,
             "type": v_type,
             "required": not calc,
             "calculated": calc,
-            "description": f"Computed {var.replace('_', ' ')}" if calc else f"Enter {var.replace('_', ' ')}"
+            "description": f"Computed {var.replace('_', ' ')}" if calc else f"Enter {var.replace('_', ' ')}",
+            "options": list(dropdown_fields[var]) if var in dropdown_fields else None,
         })
 
     return placeholders
@@ -257,65 +286,29 @@ def render_document(
     pf_percentage: float = 12.0
 ) -> Tuple[Path, str]:
     """
-    Fills a DOCX template with given values, performs CTC calculations,
-    processes [CALC(...)] tags, and generates DOCX or PDF.
+    Fills a DOCX template using template-defined [CALC(...)] formulas and
+    generates DOCX or PDF. No salary or business rules live in this backend.
     Returns (output_path, mime_type).
     """
     if not template_path.exists():
         raise FileNotFoundError(f"Template not found: {template_path}")
 
-    # Step 1: CTC Calculation. Templates use both camel/Pascal case (`CTC`)
-    # and snake case (`ctc_total`), so resolve these names case-insensitively.
-    normalized_values = {str(key).lower(): value for key, value in values.items()}
-    ctc_val = normalized_values.get("ctc_total") or normalized_values.get("salary") or normalized_values.get("ctc")
-    basic_pf_val = normalized_values.get("basic_pf", 1800)
-
-    # Initialize context with user values
+    # Step 1: Resolve only formulas authored in the DOCX template. Named
+    # formulas become regular placeholder values for later formula references.
     context: Dict[str, Any] = dict(values)
+    calculated_values, formula_replacements = evaluate_template_formulas(template_path, values)
+    context.update({name: str(value) for name, value in calculated_values.items()})
 
-    # If CTC value is present, compute complete CTC breakdown
-    if ctc_val is not None and str(ctc_val).strip() != "":
-        try:
-            ctc_in_words = amount_to_indian_rupees_words(ctc_val)
-            context["CTCInWords"] = ctc_in_words
-            context["ctc_in_words"] = ctc_in_words
-            ctc_breakdown = calculate_ctc(
-                ctc_total=ctc_val,
-                basic_pf=basic_pf_val,
-                pf_mode=pf_mode,
-                pf_percentage=pf_percentage,
-                preset=values.get("ctc_preset", "nichebit"),
-                hra_rate_pct=values.get("hra_rate_pct", 10),
-                insurance_annual=values.get("insurance_annual", 8000),
-                basic_mode=values.get("basic_mode", "statutory_min"),
+    select_replacements: Dict[str, str] = {}
+    for select in extract_select_blocks_from_docx(template_path):
+        if select.name not in values:
+            raise FormulaError(f"Dropdown '{select.name}' requires a selection.")
+        selected = str(values[select.name]).strip()
+        if selected not in select.options:
+            raise FormulaError(
+                f"Dropdown '{select.name}' must be one of: {', '.join(select.options)}."
             )
-            # Inject both raw and formatted values
-            for k, res in ctc_breakdown.items():
-                context[k] = res["raw_value"]
-                context[f"{k}_formatted"] = res["formatted_value"]
-
-            # Compatibility aliases for the uploaded Nichebit compensation
-            # table, whose placeholders use PascalCase field names.
-            aliases = {
-                "BasicAnnual": "annual_basic", "BasicMonthly": "basic_per_month",
-                "HraAnnual": "annual_hra", "HraMonthly": "hra_per_month",
-                "SpecialAllowanceAnnual": "special_allowance", "SpecialAllowanceMonthly": "monthly_special_allowance",
-                # Preserve support for the spelling used in Offer Letter.docx.
-                "SpecialAllowceAnnual": "special_allowance",
-                "GrossAnnual": "gross_annual_salary", "GrossMonthly": "gross_monthly_salary",
-                "PFAnnual": "pf_per_year", "PFMonthly": "pf_per_month",
-                "GratuityAnnual": "gratuity_per_year", "GratuityMonthly": "gratuity_per_month",
-                "InsuranceAnnual": "insurance_per_year", "TotalFixedAnnual": "total_fixed_annual",
-                "TotalFixedMonthly": "total_fixed_monthly", "TotalCtcAnnual": "total_fixed_annual",
-                "TotalCtcMonthly": "total_fixed_monthly",
-                # Split field names found in Offer Letter.docx.
-                "TotalFixed Monthly": "total_fixed_monthly",
-                "TotalCtcMo nthly": "total_fixed_monthly",
-            }
-            for placeholder, key in aliases.items():
-                context[placeholder] = ctc_breakdown[key]["formatted_value"]
-        except Exception as e:
-            print(f"Warning during CTC breakdown calculation: {e}")
+        select_replacements[select.source] = selected
 
     # Also make sure full_name / employee_name convenience variables exist if first & last provided
     if "first_name" in values and "last_name" in values:
@@ -326,7 +319,9 @@ def render_document(
     # tables. Unlike docxtpl, it does not rebuild the document XML.
     out_docx = get_generated_path(f"{output_filename_base}.docx")
     try:
-        render_preserving_word_layout(template_path, out_docx, context)
+        render_preserving_word_layout(
+            template_path, out_docx, context, formula_replacements, select_replacements
+        )
     except Exception as e:
         raise RuntimeError(f"Unable to fill the Word template while preserving its layout: {e}") from e
 
