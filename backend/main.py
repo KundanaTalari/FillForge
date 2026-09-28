@@ -33,7 +33,8 @@ FRONTEND_ORIGINS = [
 # Enable CORS for local Vite development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=FRONTEND_ORIGINS,
+    allow_origins=["*"],
+    #allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
