@@ -214,6 +214,9 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const livePdfRequestRef = useRef<AbortController | null>(null);
 
   const [docxRenderError, setDocxRenderError] = useState<string | null>(null);
+  // The browser's PDF viewer owns page scrolling. Preventing the surrounding
+  // pane from scrolling avoids two competing vertical scrollbars in PDF mode.
+  const isPdfPrintView = viewMode === 'single' && activeTab === 'preview' && previewFidelity === 'pdf';
 
   // Measure rendered Word document page dimensions
   const measureDoc = useCallback(() => {
@@ -938,7 +941,12 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       </div>
 
       {/* 2. Main View Area */}
-      <div ref={viewportRef} className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 md:p-6 min-w-0">
+      <div
+        ref={viewportRef}
+        className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-5 md:p-6 min-w-0 ${
+          isPdfPrintView ? 'overflow-y-hidden' : 'overflow-y-auto'
+        }`}
+      >
         {loading ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 py-16">
             <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mb-3" />
@@ -1029,7 +1037,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           </div>
         ) : activeTab === 'preview' ? (
           /* Single Document Preview with Multi-Fidelity Support */
-          <div>
+          <div className={isPdfPrintView ? 'h-full min-h-0' : undefined}>
             {previewFidelity === 'word' ? (
               /* High-Fidelity Word Layout (docx-preview with full original colors, tables, logos, and fonts) */
               <div className="flex flex-col items-center">
@@ -1113,8 +1121,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </div>
             ) : previewFidelity === 'pdf' ? (
               /* Vector PDF Print View via Headless LibreOffice */
-              <div className="flex flex-col items-center">
-                <div className="w-full max-w-4xl mb-4 flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs shadow-2xs">
+              <div className="h-full min-h-0 flex flex-col items-center">
+                <div className="w-full max-w-4xl mb-4 shrink-0 flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs shadow-2xs">
                   <div className="flex items-center gap-2">
                     <Printer className="w-4 h-4 text-slate-700 shrink-0" />
                     <span>
@@ -1140,7 +1148,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   </a>
                 </div>
 
-                <div className="w-full max-w-4xl bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden h-[850px]">
+                <div className="w-full max-w-4xl flex-1 min-h-0 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
                   <iframe
                     src={pdfPreviewSrc}
                     className="w-full h-full border-0"
