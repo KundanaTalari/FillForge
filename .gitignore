@@ -7,3 +7,5 @@ coverage/
 *.log
 .env*
 !.env.example
+backend/.test-temp/
+.pytest_cache/
