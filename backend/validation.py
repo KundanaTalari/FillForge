@@ -3,34 +3,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, Tuple, Optional, List
 
-CALCULATED_VARIABLES = {
-    "annual_basic",
-    "basic_per_month",
-    "annual_hra",
-    "hra_per_month",
-    "pf_per_year",
-    "pf_per_month",
-    "gratuity_per_year",
-    "gratuity_per_month",
-    "special_allowance",
-    "monthly_special_allowance",
-}
-
-# Friendly placeholder names commonly used in offer-letter compensation tables.
-# These are outputs of CTC, never fields an employee should type manually.
-CTC_BREAKDOWN_VARIABLES = {
-    "basicannual", "basicmonthly",
-    "hraannual", "hramonthly",
-    "specialallowanceannual", "specialallowancemonthly", "specialallowceannual",
-    "grossannual", "grossmonthly",
-    "pfannual", "pfmonthly",
-    "gratuityannual", "gratuitymonthly",
-    "insuranceannual", "insurancemonthly",
-    "totalfixedannual", "totalfixedmonthly",
-    "totalctcannual", "totalctcmonthly",
-    "performancebonusannual", "performancebonusmonthly",
-}
-
 EMAIL_REGEX = re.compile(r"^[\w\.\+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+$")
 PHONE_REGEX = re.compile(r"^[\+]?[0-9\s\-\(\)]{7,18}$")
 
@@ -45,14 +17,11 @@ def detect_variable_type(name: str) -> str:
     tokens = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower().replace("-", "_").split("_")
     token_set = {token for token in tokens if token}
 
-    # Amount-in-words placeholders are derived text, not monetary inputs.
+    # Amount-in-words fields are text. Whether they are calculated is decided
+    # by a named [CALC(field = ...)] formula in the DOCX, not this backend.
     if "inwords" in s or "_in_words" in s:
         return "text"
     
-    # Check calculated or monetary terms first
-    if s in CALCULATED_VARIABLES:
-        return "currency"
-
     # Datetime before date
     if s.endswith("_at") or "datetime" in s or s in ["created_at", "updated_at", "timestamp"]:
         return "datetime"
@@ -95,14 +64,8 @@ def detect_variable_type(name: str) -> str:
 
 
 def is_calculated_variable(name: str) -> bool:
-    """Returns True if placeholder is automatically computed by the calculation engine."""
-    normalized = name.lower().strip()
-    compact = re.sub(r"[^a-z0-9]", "", normalized)
-    return (
-        normalized in CALCULATED_VARIABLES
-        or compact in CTC_BREAKDOWN_VARIABLES
-        or normalized in {"ctcinwords", "ctc_in_words", "annualcompensationinwords"}
-    )
+    """Calculated status comes from a named DOCX formula, not name heuristics."""
+    return False
 
 
 def validate_and_normalize_value(field_name: str, var_type: str, value: Any, required: bool = True) -> Tuple[bool, Any, Optional[str]]:

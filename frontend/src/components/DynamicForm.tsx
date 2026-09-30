@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DocumentMeta, Placeholder, VariableType, CTCBreakdown } from '../types';
-import { calculateCTC, generateDocument } from '../services/api';
-import { amountToIndianRupeesWords } from '../utils/numberToWords';
+import { generateDocument } from '../services/api';
 import {
   Download,
   FileDown,
@@ -136,74 +135,11 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
     setCalculations(null);
   };
 
-  const ctcInputName = document?.placeholders.find((placeholder) =>
-    ['ctc_total', 'salary', 'ctc'].includes(placeholder.name.toLowerCase())
-  )?.name;
-  const basicPfInputName = document?.placeholders.find(
-    (placeholder) => placeholder.name.toLowerCase() === 'basic_pf'
-  )?.name;
-  const ctcValue = ctcInputName ? formData[ctcInputName] : undefined;
-  const basicPfValue = basicPfInputName ? formData[basicPfInputName] : 1800;
-  const ctcInWordsInputName = document?.placeholders.find(
-    (placeholder) => ['ctcinwords', 'ctc_in_words', 'annualcompensationinwords'].includes(placeholder.name.toLowerCase())
-  )?.name;
-
+  // The template formula engine runs on the backend during generation. There
+  // are no frontend salary presets or hardcoded compensation calculations.
   useEffect(() => {
-    if (!ctcInWordsInputName) return;
-    const words = amountToIndianRupeesWords(ctcValue || '');
-    setFormData((previous) => previous[ctcInWordsInputName] === words
-      ? previous
-      : { ...previous, [ctcInWordsInputName]: words });
-  }, [ctcInWordsInputName, ctcValue]);
-
-  // Recalculate CTC whenever the template's CTC input changes. Template
-  // authors use both {{ctc}} and {{CTC}}, so matching is case-insensitive.
-  useEffect(() => {
-    if (ctcValue && !isNaN(Number(ctcValue))) {
-      let isCurrent = true;
-      setCalcLoading(true);
-
-      calculateCTC({
-        ctc_total: Number(ctcValue),
-        basic_pf: Number(basicPfValue),
-        pf_mode: pfMode,
-        pf_percentage: pfPercentage,
-        preset,
-        hra_rate_pct: hraRatePct,
-        insurance_annual: insuranceAnnual,
-        basic_mode: basicMode,
-      })
-        .then((res) => {
-          if (isCurrent) setCalculations(res);
-        })
-        .catch((err) => {
-          console.error('Calculation error:', err);
-        })
-        .finally(() => {
-          if (isCurrent) setCalcLoading(false);
-        });
-
-      return () => {
-        isCurrent = false;
-      };
-    } else {
-      setCalculations(null);
-    }
-  }, [
-    ctcValue,
-    basicPfValue,
-    pfMode,
-    pfPercentage,
-    preset,
-    hraRatePct,
-    insuranceAnnual,
-    basicMode,
-  ]);
-
-  // Notify parent component of live form data and calculations for live template preview
-  useEffect(() => {
-    onValuesChange?.(formData, calculations);
-  }, [formData, calculations, onValuesChange]);
+    onValuesChange?.(formData, null);
+  }, [formData, onValuesChange]);
 
   const handleInputChange = (name: string, value: any) => {
     setFormData((prev) => ({
@@ -224,15 +160,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
       try {
         const { blob, filename } = await generateDocument(document.id, {
           format,
-          values: {
-            ...formData,
-            ctc_preset: preset,
-            hra_rate_pct: hraRatePct,
-            insurance_annual: insuranceAnnual,
-            basic_mode: basicMode,
-          },
-          pf_mode: pfMode,
-          pf_percentage: pfPercentage,
+          values: formData,
         });
 
         // Trigger automatic browser download
@@ -274,11 +202,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   }
 
   const inputPlaceholders = document.placeholders.filter((p) => !p.calculated);
-  const hasCTC = document.placeholders.some(
-    (p) =>
-      ['ctc_total', 'salary', 'ctc', 'annual_basic'].includes(p.name.toLowerCase()) ||
-      p.calculated
-  );
+  const hasCTC = false;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -337,7 +261,22 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
                   </div>
 
                   {/* Field Control according to Variable Type */}
-                  {p.type === 'boolean' ? (
+                  {p.options && p.options.length > 0 ? (
+                    <select
+                      value={val}
+                      onChange={(e) => handleInputChange(p.name, e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-sm text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 transition-colors shadow-2xs"
+                    >
+                      <option value="">Select {label}</option>
+                      {p.options.map((option) => (
+                        <option key={option} value={option}>
+                          {p.type === 'currency'
+                            ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(option))
+                            : option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : p.type === 'boolean' ? (
                     <label className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors">
                       <input
                         type="checkbox"
