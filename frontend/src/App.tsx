@@ -5,7 +5,7 @@ import { DynamicForm } from './components/DynamicForm';
 import { BulkMode } from './components/BulkMode';
 import { AuthScreen } from './components/AuthScreen';
 import { DocumentMeta, CTCBreakdown } from './types';
-import { getDocuments, uploadDocument, deleteDocument, getCurrentUser, signOut, User } from './services/api';
+import { getDocuments, uploadDocument, deleteDocument, renameDocument, getCurrentUser, signOut, User } from './services/api';
 import {
   FileText,
   Layers,
@@ -87,6 +87,12 @@ export function App() {
     showToast('Template deleted successfully.');
   };
 
+  const handleRename = async (id: string, name: string) => {
+    const updated = await renameDocument(id, name);
+    setDocuments((current) => current.map((item) => item.id === id ? updated : item));
+    showToast(`Template renamed to "${updated.name}".`);
+  };
+
   const showToast = (msg: string) => {
     setNotification(msg);
     setTimeout(() => {
@@ -120,6 +126,7 @@ export function App() {
         onSelectDoc={handleSelectDoc}
         onUpload={handleUpload}
         onDelete={handleDelete}
+        onRename={handleRename}
         onLoadSamples={handleLoadSamples}
         loading={loading}
       />
@@ -182,6 +189,11 @@ export function App() {
             <DynamicForm
               document={selectedDocument}
               onGenerationSuccess={(file) => showToast(`Document "${file}" generated!`)}
+              onDocumentUpdated={(updatedDocument) => {
+                setDocuments((current) => current.map((item) => (
+                  item.id === updatedDocument.id ? updatedDocument : item
+                )));
+              }}
               onValuesChange={(data, calcs) => {
                 setLiveFormData(data);
                 setLiveCalculations(calcs);

@@ -211,7 +211,7 @@ def extract_placeholders_from_docx(file_path: Path) -> List[Dict[str, Any]]:
     sorted_vars.sort(key=sort_key)
 
     for var in sorted_vars:
-        v_type = detect_variable_type(var)
+        v_type = "select" if var in dropdown_fields else detect_variable_type(var)
         calc = var in formula_targets_set
         placeholders.append({
             "name": var,

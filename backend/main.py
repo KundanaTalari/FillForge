@@ -12,13 +12,13 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
 
-from db import init_db, insert_document, update_document_placeholders, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
+from db import init_db, insert_document, update_document_placeholders, update_placeholder_metadata, update_document_name, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
 from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, person_document_name, GENERATED_DIR
 from generation import extract_placeholders_from_docx, render_document, convert_to_pdf
 from formula_engine import FormulaError
 from bulk import generate_sample_sheet, process_bulk_generation
 from validation import validate_and_normalize_value, is_calculated_variable
-from schemas import GenerateRequest, BulkGenerateResponse, SignUpRequest, SignInRequest
+from schemas import GenerateRequest, BulkGenerateResponse, SignUpRequest, SignInRequest, PlaceholderMetadataUpdate, DocumentNameUpdate
 
 app = FastAPI(title="FillForge API", version="1.0.0")
 
@@ -91,6 +91,15 @@ def refresh_template_placeholders():
         if not template_path.exists():
             continue
         extracted = extract_placeholders_from_docx(template_path)
+        # Keep deliberate UI field-type overrides while refreshing the DOCX
+        # extraction (for example, an author changing a text field to Select).
+        existing = {field.get("name"): field for field in document.get("placeholders", [])}
+        for field in extracted:
+            saved = existing.get(field.get("name"))
+            if saved and saved.get("type_overridden"):
+                field["type"] = saved.get("type", field["type"])
+                field["options"] = saved.get("options")
+                field["type_overridden"] = True
         # Rebuild metadata on startup so formula targets immediately become
         # calculated fields when a template's formulas change.
         update_document_placeholders(document["id"], extracted)
@@ -174,6 +183,30 @@ def get_document(doc_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
+@app.patch("/documents/{doc_id}/placeholders")
+def update_document_placeholder(doc_id: str, payload: PlaceholderMetadataUpdate):
+    allowed_types = {
+        "text", "date", "currency", "number", "percentage", "select",
+        "email", "phone", "time", "datetime", "boolean",
+    }
+    if payload.type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Unsupported field type.")
+    options = [str(option).strip() for option in (payload.options or []) if str(option).strip()]
+    if payload.type == "select" and not options:
+        raise HTTPException(status_code=400, detail="A Select field needs at least one option.")
+    if not update_placeholder_metadata(doc_id, payload.name, payload.type, options):
+        raise HTTPException(status_code=404, detail="Placeholder not found.")
+    return get_document_by_id(doc_id)
+
+@app.patch("/documents/{doc_id}/name")
+def rename_document(doc_id: str, payload: DocumentNameUpdate):
+    name = payload.name.strip()
+    if not name or len(name) > 150:
+        raise HTTPException(status_code=400, detail="Template name must contain 1 to 150 characters.")
+    if not update_document_name(doc_id, name):
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return get_document_by_id(doc_id)
 
 @app.get("/documents/{doc_id}/preview")
 def preview_document(doc_id: str):
@@ -278,6 +311,8 @@ async def generate_document(doc_id: str, request: GenerateRequest):
         )
         if not is_valid:
             validation_errors.append(err)
+        elif p.get("type") == "select" and str(norm_val) not in (p.get("options") or []):
+            validation_errors.append(f"'{p_name}' must be one of: {', '.join(p.get('options') or [])}.")
         else:
             validated_values[p_name] = norm_val
 

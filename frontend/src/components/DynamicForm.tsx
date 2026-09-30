@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DocumentMeta, Placeholder, VariableType, CTCBreakdown } from '../types';
-import { generateDocument } from '../services/api';
+import { DocumentMeta, Placeholder, VariableType, CTCBreakdown, VariableType as FieldType } from '../types';
+import { generateDocument, updatePlaceholderMetadata } from '../services/api';
 import {
   Download,
   FileDown,
@@ -26,12 +26,14 @@ interface DynamicFormProps {
   document: DocumentMeta | null;
   onGenerationSuccess?: (filename: string) => void;
   onValuesChange?: (values: Record<string, any>, calculations: CTCBreakdown | null) => void;
+  onDocumentUpdated?: (document: DocumentMeta) => void;
 }
 
 export const DynamicForm: React.FC<DynamicFormProps> = ({
   document,
   onGenerationSuccess,
   onValuesChange,
+  onDocumentUpdated,
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [preset, setPreset] = useState<'nichebit' | 'standard' | 'custom'>('nichebit');
@@ -46,6 +48,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   const [generatingFormat, setGeneratingFormat] = useState<'docx' | 'pdf' | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [fieldSaving, setFieldSaving] = useState<string | null>(null);
 
   // When document changes, preserve already entered fields and ensure all placeholders exist
   useEffect(() => {
@@ -147,6 +150,34 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
       [name]: value,
     }));
     setErrorMsg(null);
+  };
+
+  const saveFieldMetadata = async (placeholder: Placeholder, type: FieldType, options?: string[]) => {
+    if (!document || placeholder.calculated) return;
+    setFieldSaving(placeholder.name);
+    try {
+      const updated = await updatePlaceholderMetadata(document.id, {
+        name: placeholder.name,
+        type,
+        options,
+      });
+      onDocumentUpdated?.(updated);
+      setErrorMsg(null);
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.detail || 'Could not save the field type.');
+    } finally {
+      setFieldSaving(null);
+    }
+  };
+
+  const handleFieldTypeChange = (placeholder: Placeholder, type: FieldType) => {
+    const options = type === 'select' ? (placeholder.options?.length ? placeholder.options : ['Option 1', 'Option 2']) : undefined;
+    saveFieldMetadata(placeholder, type, options);
+  };
+
+  const handleSelectOptionsChange = (placeholder: Placeholder, value: string) => {
+    const options = value.split(',').map((item) => item.trim()).filter(Boolean);
+    if (options.length) saveFieldMetadata(placeholder, 'select', options);
   };
 
   const handleGenerate = async (format: 'docx' | 'pdf') => {
@@ -255,20 +286,40 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
                       <span>{label}</span>
                       {p.required && <span className="text-rose-500 font-bold">*</span>}
                     </label>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {`{{${p.name}}}`}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono text-slate-400">{`{{${p.name}}}`}</span>
+                      <select
+                        value={p.type}
+                        disabled={p.calculated || fieldSaving === p.name}
+                        onChange={(e) => handleFieldTypeChange(p, e.target.value as FieldType)}
+                        title="Override the automatically detected field type"
+                        className="max-w-24 rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium text-slate-600 focus:border-indigo-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="text">Text</option>
+                        <option value="date">Date</option>
+                        <option value="currency">Currency</option>
+                        <option value="number">Number</option>
+                        <option value="percentage">Percent</option>
+                        <option value="select">Select</option>
+                        <option value="email">Email</option>
+                        <option value="phone">Phone</option>
+                        <option value="time">Time</option>
+                        <option value="datetime">Date &amp; time</option>
+                        <option value="boolean">Yes / No</option>
+                        <option value="image" disabled>Image (soon)</option>
+                      </select>
+                    </div>
                   </div>
 
                   {/* Field Control according to Variable Type */}
-                  {p.options && p.options.length > 0 ? (
+                  {p.type === 'select' || (p.options && p.options.length > 0) ? (
                     <select
                       value={val}
                       onChange={(e) => handleInputChange(p.name, e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-sm text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 transition-colors shadow-2xs"
                     >
                       <option value="">Select {label}</option>
-                      {p.options.map((option) => (
+                      {(p.options || []).map((option) => (
                         <option key={option} value={option}>
                           {p.type === 'currency'
                             ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(option))
@@ -360,6 +411,20 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
                       placeholder={`Enter ${label}`}
                       className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-sm text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 transition-colors shadow-2xs"
                     />
+                  )}
+                  {p.type === 'select' && (
+                    <div className="pt-1">
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">
+                        Dropdown choices — separate with commas
+                      </label>
+                      <input
+                        type="text"
+                        defaultValue={(p.options || []).join(', ')}
+                        onBlur={(e) => handleSelectOptionsChange(p, e.target.value)}
+                        placeholder="Example: 8000, 15000"
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 px-2 text-xs text-slate-700 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                      />
+                    </div>
                   )}
                 </div>
               );

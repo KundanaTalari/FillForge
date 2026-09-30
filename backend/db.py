@@ -100,6 +100,33 @@ def update_document_placeholders(doc_id: str, placeholders: List[Dict[str, Any]]
     conn.commit()
     conn.close()
 
+def update_placeholder_metadata(doc_id: str, name: str, field_type: str, options: Optional[List[str]] = None) -> bool:
+    """Persist a user's manual field-type/choice override inside document metadata."""
+    document = get_document_by_id(doc_id)
+    if not document:
+        return False
+    updated = False
+    for placeholder in document["placeholders"]:
+        if placeholder.get("name") == name:
+            placeholder["type"] = field_type
+            placeholder["options"] = options or None
+            placeholder["type_overridden"] = True
+            updated = True
+            break
+    if updated:
+        update_document_placeholders(doc_id, document["placeholders"])
+    return updated
+
+def update_document_name(doc_id: str, name: str) -> bool:
+    """Rename the user-facing template label without moving its DOCX file."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE documents SET name = ? WHERE id = ?", (name, doc_id))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
 def document_exists(doc_id: str) -> bool:
     conn = get_db_connection()
     row = conn.execute("SELECT 1 FROM documents WHERE id = ?", (doc_id,)).fetchone()

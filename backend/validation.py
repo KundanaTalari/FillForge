@@ -106,11 +106,12 @@ def validate_and_normalize_value(field_name: str, var_type: str, value: Any, req
             return False, None, f"'{field_name}' must be a valid percentage (0-100)."
 
     elif var_type == "date":
-        # Accept YYYY-MM-DD or DD/MM/YYYY or DD-MM-YYYY
+        # Browsers submit HTML date inputs as YYYY-MM-DD, but offer letters
+        # should render dates in the Indian day-month-year format.
         for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
             try:
                 dt = datetime.strptime(val_str, fmt)
-                return True, dt.strftime("%Y-%m-%d"), None
+                return True, dt.strftime("%d-%m-%Y"), None
             except ValueError:
                 pass
         return False, None, f"'{field_name}' must be a valid date in YYYY-MM-DD format."

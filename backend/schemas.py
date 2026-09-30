@@ -9,6 +9,14 @@ class PlaceholderItem(BaseModel):
     description: Optional[str] = None
     options: Optional[List[str]] = None
 
+class PlaceholderMetadataUpdate(BaseModel):
+    name: str
+    type: str
+    options: Optional[List[str]] = None
+
+class DocumentNameUpdate(BaseModel):
+    name: str
+
 class DocumentResponse(BaseModel):
     id: str
     name: str

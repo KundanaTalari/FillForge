@@ -54,6 +54,14 @@ export const getDocument = async (id: string): Promise<DocumentMeta> => {
   return res.data;
 };
 
+export const updatePlaceholderMetadata = async (
+  documentId: string,
+  payload: { name: string; type: string; options?: string[] },
+): Promise<DocumentMeta> => {
+  const res = await api.patch(`/documents/${documentId}/placeholders`, payload);
+  return res.data;
+};
+
 export const uploadDocument = async (file: File): Promise<DocumentMeta> => {
   const formData = new FormData();
   formData.append('file', file);
@@ -65,6 +73,11 @@ export const uploadDocument = async (file: File): Promise<DocumentMeta> => {
 
 export const deleteDocument = async (id: string): Promise<{ status: string; id: string }> => {
   const res = await api.delete(`/documents/${id}`);
+  return res.data;
+};
+
+export const renameDocument = async (id: string, name: string): Promise<DocumentMeta> => {
+  const res = await api.patch(`/documents/${id}/name`, { name });
   return res.data;
 };
 

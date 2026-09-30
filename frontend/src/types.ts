@@ -8,7 +8,8 @@ export type VariableType =
   | 'email'
   | 'phone'
   | 'boolean'
-  | 'percentage';
+  | 'percentage'
+  | 'select';
 
 export interface Placeholder {
   name: string;
@@ -18,6 +19,7 @@ export interface Placeholder {
   description?: string;
   /** Fixed choices authored with [SELECT(field, option1, option2)] in the DOCX. */
   options?: string[] | null;
+  type_overridden?: boolean;
 }
 
 export interface DocumentMeta {
