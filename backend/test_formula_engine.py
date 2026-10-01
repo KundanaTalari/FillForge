@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 
 import pytest
 from docx import Document
@@ -40,6 +41,40 @@ def test_if_min_max_and_inline_formula(tmp_path):
     assert values["basic_monthly"] == 25000
     assert values["pf_monthly"] == 3000
     assert "3000" in replacements.values()
+
+
+@pytest.mark.parametrize(("expression", "expected"), [
+    ("ROUND(10.4, 0)", Decimal("10")),
+    ("ROUND(10.5, 0)", Decimal("11")),
+    ("ROUND(10.6, 0)", Decimal("11")),
+    ("ROUND(123.456, 2)", Decimal("123.46")),
+    ("ROUND(123.454, 2)", Decimal("123.45")),
+    ("ROUND(123.455, 2)", Decimal("123.46")),
+    ("ROUND(-10.5, 0)", Decimal("-11")),
+    ("ROUND(MIN(30000, 25000) * 0.12, 0)", Decimal("3000")),
+])
+def test_round_uses_excel_half_away_from_zero(tmp_path, expression, expected):
+    template = make_template(tmp_path / "round.docx", [f"[CALC(result = {expression})]"])
+    values, _ = evaluate_template_formulas(template, {})
+    assert values["result"] == expected
+
+
+def test_round_resolves_placeholders_and_preserves_existing_min(tmp_path):
+    template = make_template(tmp_path / "round_placeholder.docx", [
+        "[CALC(basic_monthly = ROUND({{ctc_total}} / 24, 0))]",
+        "[CALC(pf_monthly = MIN({{basic_monthly}}, 25000) * 0.12)]",
+    ])
+    # 240,012 / 24 = 10,000.5, which must round up to 10,001.
+    values, replacements = evaluate_template_formulas(template, {"ctc_total": 240012})
+    assert values["basic_monthly"] == Decimal("10001")
+    assert values["pf_monthly"] == Decimal("1200.12")
+    assert "10001" in replacements.values()
+
+
+def test_round_rejects_non_integer_digits(tmp_path):
+    template = make_template(tmp_path / "invalid_round.docx", ["[CALC(result = ROUND(10.5, 0.5))]"])
+    with pytest.raises(FormulaError, match="ROUND digits must be an integer"):
+        evaluate_template_formulas(template, {})
 
 
 def test_undefined_variable_is_clear(tmp_path):

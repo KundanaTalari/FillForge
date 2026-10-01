@@ -9,7 +9,7 @@ import ast
 import re
 import zipfile
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -40,7 +40,7 @@ class SelectBlock:
 
 
 def find_calc_blocks(text: str) -> List[FormulaBlock]:
-    """Find balanced [CALC(...)] blocks, including nested IF/MIN/MAX calls."""
+    """Find balanced [CALC(...)] blocks, including nested safe function calls."""
     blocks: List[FormulaBlock] = []
     index = 0
     while True:
@@ -188,7 +188,7 @@ class _SafeFormulaEvaluator(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Decimal:
         if not isinstance(node.func, ast.Name) or node.keywords:
-            raise FormulaError("Only IF, MIN, and MAX functions are allowed.")
+            raise FormulaError("Only IF, MIN, MAX, and ROUND functions are allowed.")
         function = node.func.id.upper()
         if function == "IF":
             if len(node.args) != 3: raise FormulaError("IF requires exactly three arguments.")
@@ -197,6 +197,20 @@ class _SafeFormulaEvaluator(ast.NodeVisitor):
             if not node.args: raise FormulaError(f"{function} requires at least one argument.")
             values = [self._number(self.visit(arg)) for arg in node.args]
             return min(values) if function == "MIN" else max(values)
+        if function == "ROUND":
+            if len(node.args) != 2:
+                raise FormulaError("ROUND requires exactly two arguments: number and digits.")
+            value = self._number(self.visit(node.args[0]))
+            digits = self._number(self.visit(node.args[1]))
+            if digits != digits.to_integral_value():
+                raise FormulaError("ROUND digits must be an integer.")
+            try:
+                # ROUND_HALF_UP gives Excel-style rounding: ties move away
+                # from zero (10.5 -> 11, -10.5 -> -11), unlike Python round.
+                quantizer = Decimal("1").scaleb(-int(digits))
+                return value.quantize(quantizer, rounding=ROUND_HALF_UP)
+            except (InvalidOperation, OverflowError, ValueError) as exc:
+                raise FormulaError("ROUND could not apply the requested number of digits.") from exc
         raise FormulaError(f"Unsupported formula function: {node.func.id}")
 
     @staticmethod
