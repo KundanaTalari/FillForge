@@ -19,7 +19,8 @@ import {
   Sliders,
   Sparkles,
   Calculator,
-  RotateCcw
+  RotateCcw,
+  Copy,
 } from 'lucide-react';
 
 interface DynamicFormProps {
@@ -27,6 +28,36 @@ interface DynamicFormProps {
   onGenerationSuccess?: (filename: string) => void;
   onValuesChange?: (values: Record<string, any>, calculations: CTCBreakdown | null) => void;
   onDocumentUpdated?: (document: DocumentMeta) => void;
+}
+
+const INDIAN_ONES = [
+  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+  'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+  'Seventeen', 'Eighteen', 'Nineteen',
+];
+const INDIAN_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function wordsBelowThousand(value: number): string {
+  const parts: string[] = [];
+  if (value >= 100) parts.push(`${INDIAN_ONES[Math.floor(value / 100)]} Hundred`);
+  const remaining = value % 100;
+  if (remaining >= 20) parts.push(`${INDIAN_TENS[Math.floor(remaining / 10)]}${remaining % 10 ? ` ${INDIAN_ONES[remaining % 10]}` : ''}`);
+  else if (remaining) parts.push(INDIAN_ONES[remaining]);
+  return parts.join(' ');
+}
+
+function indianRupeesInWords(rawValue: unknown): string {
+  const amount = Math.round(Number(String(rawValue ?? '').replace(/[^0-9.-]/g, '')));
+  if (!Number.isFinite(amount) || amount <= 0) return '';
+  const parts: string[] = [];
+  let remaining = amount;
+  for (const [divisor, label] of [[10_000_000, 'Crore'], [100_000, 'Lakh'], [1_000, 'Thousand']] as const) {
+    const group = Math.floor(remaining / divisor);
+    if (group) parts.push(`${wordsBelowThousand(group)} ${label}`);
+    remaining %= divisor;
+  }
+  if (remaining) parts.push(wordsBelowThousand(remaining));
+  return `Rupees ${parts.join(' ')} Only`;
 }
 
 export const DynamicForm: React.FC<DynamicFormProps> = ({
@@ -49,6 +80,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [fieldSaving, setFieldSaving] = useState<string | null>(null);
+  const [copiedCtcWords, setCopiedCtcWords] = useState(false);
 
   // When document changes, preserve already entered fields and ensure all placeholders exist
   useEffect(() => {
@@ -180,6 +212,16 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
     if (options.length) saveFieldMetadata(placeholder, 'select', options);
   };
 
+  const copyCtcWords = async (words: string) => {
+    try {
+      await navigator.clipboard.writeText(words);
+      setCopiedCtcWords(true);
+      window.setTimeout(() => setCopiedCtcWords(false), 1800);
+    } catch {
+      setErrorMsg('Could not copy CTC in words. Please select and copy it manually.');
+    }
+  };
+
   const handleGenerate = async (format: 'docx' | 'pdf') => {
     if (!document) return;
     setGeneratingFormat(format);
@@ -278,6 +320,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
                 .split('_')
                 .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
                 .join(' ');
+              const ctcWords = p.name.toLowerCase() === 'ctc_total' ? indianRupeesInWords(val) : '';
 
               return (
                 <div key={p.name} className="space-y-1.5">
@@ -424,6 +467,20 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
                         placeholder="Example: 8000, 15000"
                         className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 px-2 text-xs text-slate-700 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                       />
+                    </div>
+                  )}
+                  {ctcWords && (
+                    <div className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 text-xs text-indigo-900">
+                      <span className="flex-1 leading-relaxed">{ctcWords}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyCtcWords(ctcWords)}
+                        className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-1 font-semibold text-indigo-700 hover:bg-indigo-100"
+                        title="Copy CTC in words"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        {copiedCtcWords ? 'Copied' : 'Copy'}
+                      </button>
                     </div>
                   )}
                 </div>
