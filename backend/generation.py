@@ -6,7 +6,6 @@ import zipfile
 import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
-from docx import Document
 from docxtpl import DocxTemplate
 from lxml import etree
 
@@ -15,6 +14,7 @@ from validation import detect_variable_type, is_calculated_variable, validate_an
 from formula_engine import (
     FormulaError,
     evaluate_template_formulas,
+    extract_formula_blocks_from_docx,
     extract_select_blocks_from_docx,
     formula_targets,
     select_fields,
@@ -124,93 +124,75 @@ def extract_placeholders_from_docx(file_path: Path) -> List[Dict[str, Any]]:
     """
     Extracts all {{placeholder}} variables and [CALC(...)] expressions from a DOCX file.
     Inspects paragraphs, tables, headers, and footers.
-    Returns normalized placeholder metadata in deterministic order.
+    Returns metadata in the first-appearance order from the DOCX. This keeps
+    the form in the same sequence as the author arranged the document.
     """
+    ordered_vars: List[str] = []
     detected_vars = set()
 
-    # Method 1: Try DocxTemplate undeclared variables
+    def add_variable(name: str) -> None:
+        name = name.strip()
+        if name and name not in detected_vars:
+            detected_vars.add(name)
+            ordered_vars.append(name)
+
+    def scan_text(text: str) -> None:
+        for match in VAR_REGEX.finditer(text):
+            add_variable(match.group(1))
+
+    # Scan the main Word story in XML order. Unlike collecting paragraphs and
+    # tables separately, this preserves the actual document sequence.
+    try:
+        with zipfile.ZipFile(file_path, "r") as archive:
+            component_names = ["word/document.xml"]
+            component_names.extend(sorted(
+                name for name in archive.namelist()
+                if re.fullmatch(r"word/header\d+\.xml", name)
+            ))
+            component_names.extend(sorted(
+                name for name in archive.namelist()
+                if re.fullmatch(r"word/footer\d+\.xml", name)
+            ))
+            for component_name in component_names:
+                if component_name not in archive.namelist():
+                    continue
+                root = etree.fromstring(archive.read(component_name))
+                scan_text("".join(node.text or "" for node in root.xpath(
+                    ".//w:t", namespaces={"w": WORD_NS}
+                )))
+    except Exception as exc:
+        print(f"Warning during DOCX sequence scan: {exc}")
+
+    # Fallback/coverage for any template variable that the XML scan cannot
+    # recognise (for example special Jinja syntax). It is appended only when
+    # it did not appear in normal document order above.
     try:
         tpl = DocxTemplate(str(file_path))
         undeclared = tpl.get_undeclared_template_variables()
         for var in undeclared:
-            detected_vars.add(var.strip())
+            add_variable(var)
     except Exception:
         pass
-
-    # Method 2: Comprehensive text scan across docx XML components
-    try:
-        doc = Document(str(file_path))
-
-        # Helper to scan elements
-        def scan_text(text: str):
-            for m in VAR_REGEX.finditer(text):
-                detected_vars.add(m.group(1).strip())
-
-        # Body paragraphs
-        for p in doc.paragraphs:
-            scan_text(p.text)
-
-        # Tables
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for p in cell.paragraphs:
-                        scan_text(p.text)
-
-        # Headers and footers across sections
-        for section in doc.sections:
-            if section.header:
-                for p in section.header.paragraphs:
-                    scan_text(p.text)
-                for t in section.header.tables:
-                    for r in t.rows:
-                        for c in r.cells:
-                            for p in c.paragraphs:
-                                scan_text(p.text)
-            if section.footer:
-                for p in section.footer.paragraphs:
-                    scan_text(p.text)
-                for t in section.footer.tables:
-                    for r in t.rows:
-                        for c in r.cells:
-                            for p in c.paragraphs:
-                                scan_text(p.text)
-
-    except Exception as e:
-        print(f"Warning during docx scan: {e}")
 
     # Named formula fields are calculated by the template, not supplied by a
     # user. Example: [CALC(basic_monthly = {{ctc_total}} / 24)].
     formula_targets_set = set()
     dropdown_fields: Dict[str, Tuple[str, ...]] = {}
     try:
-        formula_targets_set = formula_targets(file_path)
-        detected_vars.update(formula_targets_set)
+        formula_blocks = extract_formula_blocks_from_docx(file_path)
+        formula_targets_set = {block.target for block in formula_blocks if block.target}
+        for block in formula_blocks:
+            if block.target:
+                add_variable(block.target)
         dropdown_fields = select_fields(file_path)
-        detected_vars.update(dropdown_fields)
+        for field in dropdown_fields:
+            add_variable(field)
     except FormulaError as exc:
         print(f"Warning during formula extraction: {exc}")
 
     # Build placeholder items
     placeholders = []
-    # Deterministic sort: non-calculated first, then calculated
-    sorted_vars = sorted(list(detected_vars))
-    
-    # Priority order for standard fields:
-    priority_order = [
-        "first_name", "last_name", "employee_name", "employee_id",
-        "designation", "department", "date_of_joining", "joining_date",
-        "ctc_total", "salary", "basic_pf", "pf_mode", "pf_percentage"
-    ]
-    
-    def sort_key(name: str):
-        is_calc = name in formula_targets_set
-        pri = priority_order.index(name) if name in priority_order else 999
-        return (1 if is_calc else 0, pri, name)
-
-    sorted_vars.sort(key=sort_key)
-
-    for var in sorted_vars:
+    for var in ordered_vars:
         v_type = "select" if var in dropdown_fields else detect_variable_type(var)
         calc = var in formula_targets_set
         placeholders.append({

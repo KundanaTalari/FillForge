@@ -125,3 +125,17 @@ def test_docx_select_tag_becomes_a_dropdown_field_and_renders_selection(tmp_path
     generated = Document(output)
     assert "[SELECT(" not in "\n".join(paragraph.text for paragraph in generated.paragraphs)
     assert "15000" in "\n".join(paragraph.text for paragraph in generated.paragraphs)
+
+
+def test_placeholders_follow_first_appearance_in_document_order(tmp_path):
+    template = make_template(tmp_path / "sequence.docx", [
+        "Date: {{offer_date}}",
+        "Employee: {{full_name}}",
+        "CTC: {{ctc_total}}",
+        "Designation: {{designation}}",
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+    ])
+    placeholders = extract_placeholders_from_docx(template)
+    input_names = [field["name"] for field in placeholders if not field["calculated"]]
+    assert input_names == ["offer_date", "full_name", "ctc_total", "designation", "total_fixed_monthly"]
+    assert next(field for field in placeholders if field["name"] == "basic_monthly")["calculated"] is True
