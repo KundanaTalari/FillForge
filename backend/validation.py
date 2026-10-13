@@ -34,8 +34,15 @@ def detect_variable_type(name: str) -> str:
     if "date" in s or s.startswith("dob") or s in ["date_of_birth", "date_of_joining", "joining_date", "relieving_date"]:
         return "date"
 
+    # Performance inputs normally represent a percentage/score supplied by
+    # the user (for example, performance_bonus = 10), not a rupee amount.
+    # Check this before the currency keywords because `performance_bonus`
+    # also contains `bonus`.
+    if s in {"performance", "performance_bonus", "performancebonus", "performance_percentage", "performancepercent"}:
+        return "number"
+
     # Currency
-    if any(k in s for k in ["ctc", "salary", "basic", "hra", "allowance", "gratuity", "pf", "bonus", "stipend", "pay", "fee"]):
+    if any(k in s for k in ["ctc", "salary", "gross", "total_fixed", "basic", "hra", "allowance", "gratuity", "pf", "bonus", "stipend", "pay", "fee"]):
         if not ("percentage" in s or "percent" in s or "mode" in s):
             return "currency"
 

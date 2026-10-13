@@ -111,6 +111,25 @@ def test_docx_generation_preserves_template_and_reacts_to_changed_formula(tmp_pa
     assert output_one.read_bytes() != output_two.read_bytes()
 
 
+def test_currency_inputs_and_calculations_use_indian_comma_grouping(tmp_path):
+    template = make_template(tmp_path / "currency_format.docx", [
+        "Annual CTC: {{ctc_total}}",
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+        "[CALC(gross_monthly = {{ctc_total}} / 12)]",
+    ])
+    output, _ = render_document(
+        template,
+        {"ctc_total": 240000},
+        "currency_format",
+        "docx",
+        currency_fields={"ctc_total", "basic_monthly", "gross_monthly"},
+    )
+    generated_text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+    assert "2,40,000" in generated_text
+    assert "10,000" in generated_text
+    assert "20,000" in generated_text
+
+
 def test_docx_select_tag_becomes_a_dropdown_field_and_renders_selection(tmp_path):
     template = make_template(tmp_path / "dropdown.docx", [
         "Annual medical insurance: [SELECT(insurance_annual, 8000, 15000)]",
@@ -121,10 +140,16 @@ def test_docx_select_tag_becomes_a_dropdown_field_and_renders_selection(tmp_path
     insurance = next(field for field in placeholders if field["name"] == "insurance_annual")
     assert insurance["options"] == ["8000", "15000"]
 
-    output, _ = render_document(template, {"insurance_annual": 15000}, "dropdown_output", "docx")
+    output, _ = render_document(
+        template,
+        {"insurance_annual": 15000},
+        "dropdown_output",
+        "docx",
+        currency_fields={"insurance_annual"},
+    )
     generated = Document(output)
     assert "[SELECT(" not in "\n".join(paragraph.text for paragraph in generated.paragraphs)
-    assert "15000" in "\n".join(paragraph.text for paragraph in generated.paragraphs)
+    assert "15,000" in "\n".join(paragraph.text for paragraph in generated.paragraphs)
 
 
 def test_placeholders_follow_first_appearance_in_document_order(tmp_path):

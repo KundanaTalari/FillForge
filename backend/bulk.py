@@ -193,7 +193,15 @@ def process_bulk_generation(
                 output_filename_base=base_name,
                 output_format=output_format,
                 pf_mode=pf_mode,
-                pf_percentage=pf_percentage
+                pf_percentage=pf_percentage,
+                currency_fields={
+                    p["name"] for p in placeholders
+                    if (
+                        p.get("type") == "currency"
+                        or p.get("calculated", False)
+                        or "insurance" in p["name"].lower()
+                    )
+                },
             )
             # Meaningful archive name
             ext = ".pdf" if output_format.lower() == "pdf" else ".docx"

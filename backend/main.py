@@ -332,7 +332,19 @@ async def generate_document(doc_id: str, request: GenerateRequest):
             output_filename_base=unique_base,
             output_format=request.format,
             pf_mode=request.pf_mode,
-            pf_percentage=request.pf_percentage
+            pf_percentage=request.pf_percentage,
+            # Every named CALC result in a compensation template is rendered
+            # as an amount. This also covers names such as gross_monthly and
+            # total_fixed_annual that do not themselves contain “salary” or
+            # “ctc”, while plain user inputs still follow their selected type.
+            currency_fields={
+                p["name"] for p in placeholders
+                if (
+                    p.get("type") == "currency"
+                    or p.get("calculated", False)
+                    or "insurance" in p["name"].lower()
+                )
+            },
         )
     except FormulaError as e:
         # A template author needs to correct this formula; returning 422 lets
