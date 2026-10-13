@@ -31,8 +31,6 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
   const [uploadedHeaders, setUploadedHeaders] = useState<string[]>([]);
   const [uploadedRowCount, setUploadedRowCount] = useState<number>(0);
   const [format, setFormat] = useState<'pdf' | 'docx'>('pdf');
-  const [pfMode, setPfMode] = useState<'fixed' | 'percentage'>('fixed');
-  const [pfPercentage, setPfPercentage] = useState<number>(12);
   const [processing, setProcessing] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [result, setResult] = useState<BulkResult | null>(null);
@@ -205,7 +203,7 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
     setProcessing(true);
     setErrorMsg(null);
     try {
-      const res = await bulkGenerate(document.id, selectedFile, format, pfMode, pfPercentage);
+      const res = await bulkGenerate(document.id, selectedFile, format);
       setResult(res);
     } catch (err: any) {
       setErrorMsg(
@@ -520,36 +518,6 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
             </div>
           </div>
 
-          {/* PF Mode selection */}
-          <div className="space-y-1.5 pt-2 border-t border-slate-100">
-            <label className="text-xs font-semibold text-slate-700">
-              PF Calculation for Compensation Tables
-            </label>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setPfMode('fixed')}
-                className={`py-1.5 px-3 rounded-lg font-medium border text-center transition-all ${
-                  pfMode === 'fixed'
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-slate-50 text-slate-700 border-slate-200'
-                }`}
-              >
-                Fixed ₹1,800/month
-              </button>
-              <button
-                type="button"
-                onClick={() => setPfMode('percentage')}
-                className={`py-1.5 px-3 rounded-lg font-medium border text-center transition-all ${
-                  pfMode === 'percentage'
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-slate-50 text-slate-700 border-slate-200'
-                }`}
-              >
-                12% of Basic
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Feedback messages */}

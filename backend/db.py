@@ -174,6 +174,15 @@ def normalize_placeholders(placeholders: List[Dict[str, Any]]) -> List[Dict[str,
         # which read the `age` in ManAGER / enGAGEment as a numeric age field.
         if name.lower() in {"reportingmanager", "reportingmanagerdesignation", "engagementtype"}:
             placeholder["type"] = "text"
+        # Correct older metadata where performance_bonus was inferred as a
+        # currency field simply because its name includes `bonus`. Preserve
+        # an explicit type selected by the user in the UI.
+        elif name.lower() in {"performance", "performance_bonus", "performancebonus", "performance_percentage", "performancepercent"} and not placeholder.get("type_overridden"):
+            placeholder["type"] = "number"
+        # Older templates classified Gross / Total Fixed formula fields as
+        # text because those names did not include a previous money keyword.
+        elif ("gross" in name.lower() or "total_fixed" in name.lower()) and not placeholder.get("type_overridden"):
+            placeholder["type"] = "currency"
     return placeholders
 
 def delete_document_by_id(doc_id: str) -> bool:

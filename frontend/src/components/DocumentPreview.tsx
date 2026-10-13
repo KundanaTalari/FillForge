@@ -671,6 +671,51 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
   };
 
+  const userInputFields = document.placeholders.filter((placeholder) => !placeholder.calculated);
+  const autoCalculatedFields = document.placeholders.filter((placeholder) => placeholder.calculated);
+
+  const renderVariableRows = (placeholders: typeof document.placeholders, showRequired: boolean) => (
+    <tbody className="divide-y divide-slate-200">
+      {placeholders.map((placeholder) => {
+        const value = placeholder.calculated
+          ? calculatedValues?.[placeholder.name]?.formatted_value
+          : formValues[placeholder.name] ?? formValues[placeholder.name.toLowerCase()];
+
+        return (
+          <tr key={placeholder.name} className="hover:bg-slate-50/80 transition-colors">
+            <td className="py-3 px-4 font-mono font-semibold text-indigo-700">
+              {`{{${placeholder.name}}}`}
+            </td>
+            <td className="py-3 px-4">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium text-xs">
+                {getTypeIcon(placeholder.type)}
+                <span className="capitalize">{placeholder.type}</span>
+              </span>
+            </td>
+            <td className="py-3 px-4">
+              {value !== undefined && value !== null && String(value).trim() !== '' ? (
+                <span className="font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  {String(value)}
+                </span>
+              ) : (
+                <span className="text-slate-400 italic">Empty</span>
+              )}
+            </td>
+            {showRequired && (
+              <td className="py-3 px-4">
+                {placeholder.required ? (
+                  <span className="text-amber-600 font-medium">Yes</span>
+                ) : (
+                  <span className="text-slate-400">Optional</span>
+                )}
+              </td>
+            )}
+          </tr>
+        );
+      })}
+    </tbody>
+  );
+
   return (
     <section className="flex-1 flex flex-col h-full bg-slate-100/60 overflow-hidden min-w-0">
       {/* 1. Top Primary Toolbar: Template Switcher & Mode Toggles */}
@@ -751,32 +796,9 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         {/* Right Controls: Fidelity Selector, Zoom, and Actions */}
         <div className="flex items-center gap-2">
-          {/* Badge: Full Color Fidelity Guarantee */}
-          <span className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs shrink-0">
-            <Palette className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Exact Word Colors & Tables Preserved</span>
-          </span>
-
-          {/* View Mode Selector (Word Colors vs PDF Print vs Badges vs Schema) */}
+          {/* Preview controls: PDF Print and Variables */}
           {viewMode === 'single' && (
             <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('preview');
-                  setPreviewFidelity('word');
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                  activeTab === 'preview' && previewFidelity === 'word'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Exact Word Document layout with full colors, custom fonts, and table cell shading"
-              >
-                <Palette className="w-3.5 h-3.5" />
-                <span>Word Colors</span>
-              </button>
-
               <button
                 type="button"
                 onClick={() => {
@@ -796,23 +818,6 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  setActiveTab('preview');
-                  setPreviewFidelity('badges');
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                  activeTab === 'preview' && previewFidelity === 'badges'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Quick text view with colored badges highlighting every variable"
-              >
-                <Highlighter className="w-3.5 h-3.5" />
-                <span>Field Badges</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => setActiveTab('schema')}
                 className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
                   activeTab === 'schema'
@@ -823,36 +828,6 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               >
                 <ListTree className="w-3.5 h-3.5" />
                 <span>Variables ({document.placeholders.length})</span>
-              </button>
-            </div>
-          )}
-
-          {/* Template Content Mode: Live Filled vs As Uploaded */}
-          {document && viewMode === 'single' && activeTab === 'preview' && (
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setShowOriginalUploaded(false)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                  !showOriginalUploaded
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Preview with filled form values"
-              >
-                Live Filled
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowOriginalUploaded(true)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                  showOriginalUploaded
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="View exact raw template as uploaded without values replaced"
-              >
-                As Uploaded
               </button>
             </div>
           )}
@@ -1132,20 +1107,48 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                         : 'Updates after you pause typing while preserving the template layout, colors, tables, and graphics.'}
                     </span>
                   </div>
-                  {renderingPdf && (
-                    <span className="flex items-center gap-1 text-[11px] font-medium text-indigo-600">
-                      <RefreshCw className="w-3 h-3 animate-spin" /> Updating...
-                    </span>
-                  )}
-                  <a
-                    href={pdfPreviewSrc}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-                  >
-                    <span>Open in new tab</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowOriginalUploaded(false)}
+                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                          !showOriginalUploaded
+                            ? 'bg-white text-indigo-700 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Preview with filled form values"
+                      >
+                        Live Filled
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowOriginalUploaded(true)}
+                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                          showOriginalUploaded
+                            ? 'bg-white text-indigo-700 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="View the raw uploaded template without values replaced"
+                      >
+                        As Uploaded
+                      </button>
+                    </div>
+                    {renderingPdf && (
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-indigo-600">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Updating...
+                      </span>
+                    )}
+                    <a
+                      href={pdfPreviewSrc}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                    >
+                      <span>Open in new tab</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
                 </div>
 
                 <div className="w-full max-w-4xl flex-1 min-h-0 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
@@ -1203,67 +1206,55 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="py-3 px-4 font-semibold">Placeholder</th>
-                    <th className="py-3 px-4 font-semibold">Inferred Type</th>
-                    <th className="py-3 px-4 font-semibold">Current Value in Preview</th>
-                    <th className="py-3 px-4 font-semibold">Mode</th>
-                    <th className="py-3 px-4 font-semibold">Required</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {document.placeholders.map((p) => {
-                    const isCalc = p.calculated;
-                    const val = isCalc
-                      ? calculatedValues?.[p.name]?.formatted_value
-                      : formValues[p.name] ?? formValues[p.name.toLowerCase()];
-
-                    return (
-                      <tr key={p.name} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-mono font-semibold text-indigo-700">
-                          {`{{${p.name}}}`}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium text-xs">
-                            {getTypeIcon(p.type)}
-                            <span className="capitalize">{p.type}</span>
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          {val !== undefined && val !== null && String(val).trim() !== '' ? (
-                            <span className="font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              {String(val)}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 italic">Empty</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          {p.calculated ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 text-[11px]">
-                              Auto Calculated
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px]">
-                              User Input
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          {p.required ? (
-                            <span className="text-amber-600 font-medium">Yes</span>
-                          ) : (
-                            <span className="text-slate-400">Optional</span>
-                          )}
-                        </td>
+            <div className="p-4 sm:p-5 space-y-5 bg-slate-50/40">
+              <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">User Input</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Fields that the user fills in the right-side form.</p>
+                  </div>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+                    {userInputFields.length} fields
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Placeholder</th>
+                        <th className="py-3 px-4 font-semibold">Type</th>
+                        <th className="py-3 px-4 font-semibold">Current Value</th>
+                        <th className="py-3 px-4 font-semibold">Required</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    {renderVariableRows(userInputFields, true)}
+                  </table>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-emerald-200 bg-white overflow-hidden">
+                <div className="px-4 py-3 border-b border-emerald-200 flex items-center justify-between bg-emerald-50/60">
+                  <div>
+                    <h4 className="text-sm font-bold text-emerald-900">Auto Calculated</h4>
+                    <p className="text-xs text-emerald-700 mt-0.5">Values produced automatically by your <code>[CALC(...)]</code> formulas.</p>
+                  </div>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                    {autoCalculatedFields.length} fields
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-emerald-50/40 border-b border-emerald-100 text-[11px] uppercase tracking-wider text-emerald-800">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Placeholder</th>
+                        <th className="py-3 px-4 font-semibold">Type</th>
+                        <th className="py-3 px-4 font-semibold">Calculated Value</th>
+                      </tr>
+                    </thead>
+                    {renderVariableRows(autoCalculatedFields, false)}
+                  </table>
+                </div>
+              </section>
             </div>
           </div>
         )}

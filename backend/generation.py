@@ -11,6 +11,7 @@ from lxml import etree
 
 from storage import get_template_path, get_generated_path, sanitize_filename
 from validation import detect_variable_type, is_calculated_variable, validate_and_normalize_value
+from calculations import format_inr_number
 from formula_engine import (
     FormulaError,
     evaluate_template_formulas,
@@ -265,7 +266,8 @@ def render_document(
     output_filename_base: str,
     output_format: str = "docx",
     pf_mode: str = "fixed",
-    pf_percentage: float = 12.0
+    pf_percentage: float = 12.0,
+    currency_fields: Optional[set[str]] = None,
 ) -> Tuple[Path, str]:
     """
     Fills a DOCX template using template-defined [CALC(...)] formulas and
@@ -277,9 +279,27 @@ def render_document(
 
     # Step 1: Resolve only formulas authored in the DOCX template. Named
     # formulas become regular placeholder values for later formula references.
-    context: Dict[str, Any] = dict(values)
+    currency_field_names = currency_fields or set()
+
+    def display_value(name: str, value: Any) -> str:
+        """Use Indian comma grouping only for fields configured as Currency."""
+        if name in currency_field_names and value not in (None, ""):
+            return format_inr_number(value)
+        return str(value)
+
+    context: Dict[str, Any] = {
+        name: display_value(name, value) for name, value in values.items()
+    }
     calculated_values, formula_replacements = evaluate_template_formulas(template_path, values)
-    context.update({name: str(value) for name, value in calculated_values.items()})
+    context.update({name: display_value(name, value) for name, value in calculated_values.items()})
+
+    # A named [CALC(field = ...)] tag is replaced directly, so format it too
+    # when that calculated field is configured as Currency.
+    for block in extract_formula_blocks_from_docx(template_path):
+        if block.target and block.target in currency_field_names:
+            formula_replacements[block.source] = display_value(
+                block.target, calculated_values[block.target]
+            )
 
     select_replacements: Dict[str, str] = {}
     for select in extract_select_blocks_from_docx(template_path):
@@ -290,7 +310,9 @@ def render_document(
             raise FormulaError(
                 f"Dropdown '{select.name}' must be one of: {', '.join(select.options)}."
             )
-        select_replacements[select.source] = selected
+        # A Select field can still represent a money amount (for example,
+        # insurance_annual with options 8000 and 15000).
+        select_replacements[select.source] = display_value(select.name, selected)
 
     # Also make sure full_name / employee_name convenience variables exist if first & last provided
     if "first_name" in values and "last_name" in values:
