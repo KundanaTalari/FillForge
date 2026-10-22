@@ -60,6 +60,44 @@ function indianRupeesInWords(rawValue: unknown): string {
   return `Rupees ${parts.join(' ')} Only`;
 }
 
+
+function copyUsingLegacyClipboard(text: string): boolean {
+  const textArea = window.document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.left = '0';
+  textArea.style.top = '0';
+  textArea.style.opacity = '0';
+  window.document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  textArea.setSelectionRange(0, textArea.value.length);
+  const copied = window.document.execCommand('copy');
+  textArea.remove();
+  return copied;
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  // On an insecure LAN origin, try the synchronous copy command while the
+  // user's click still grants transient clipboard permission.
+  if (!window.isSecureContext) {
+    if (copyUsingLegacyClipboard(text)) return;
+    throw new Error('Clipboard copy was rejected.');
+  }
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Try the synchronous fallback when the Clipboard API is denied.
+    }
+  }
+
+  if (!copyUsingLegacyClipboard(text)) throw new Error('Clipboard copy was rejected.');
+}
+
 export const DynamicForm: React.FC<DynamicFormProps> = ({
   document,
   onGenerationSuccess,
@@ -214,10 +252,11 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
 
   const copyCtcWords = async (words: string) => {
     try {
-      await navigator.clipboard.writeText(words);
+      await copyTextToClipboard(words);
       setCopiedCtcWords(true);
       window.setTimeout(() => setCopiedCtcWords(false), 1800);
     } catch {
+      setCopiedCtcWords(false);
       setErrorMsg('Could not copy CTC in words. Please select and copy it manually.');
     }
   };

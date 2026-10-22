@@ -21,6 +21,44 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+
+function copyUsingLegacyClipboard(text: string): boolean {
+  const textArea = window.document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.left = '0';
+  textArea.style.top = '0';
+  textArea.style.opacity = '0';
+  window.document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  textArea.setSelectionRange(0, textArea.value.length);
+  const copied = window.document.execCommand('copy');
+  textArea.remove();
+  return copied;
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  // On an insecure LAN origin, try the synchronous copy command while the
+  // user's click still grants transient clipboard permission.
+  if (!window.isSecureContext) {
+    if (copyUsingLegacyClipboard(text)) return;
+    throw new Error('Clipboard copy was rejected.');
+  }
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Try the synchronous fallback when the Clipboard API is denied.
+    }
+  }
+
+  if (!copyUsingLegacyClipboard(text)) throw new Error('Clipboard copy was rejected.');
+}
+
 interface BulkModeProps {
   document: DocumentMeta | null;
 }
@@ -134,12 +172,19 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
     }
   };
 
-  const handleCopyHeaders = () => {
+  const handleCopyHeaders = async () => {
     if (!columnNames.length) return;
     const headerString = columnNames.join(',');
-    navigator.clipboard.writeText(headerString);
-    setCopiedHeaders(true);
-    setTimeout(() => setCopiedHeaders(false), 2500);
+    setErrorMsg(null);
+
+    try {
+      await copyTextToClipboard(headerString);
+      setCopiedHeaders(true);
+      setTimeout(() => setCopiedHeaders(false), 2500);
+    } catch {
+      setCopiedHeaders(false);
+      setErrorMsg('Could not copy headers. Please select and copy them manually.');
+    }
   };
 
   // Inspect uploaded CSV to verify columns match required placeholders
