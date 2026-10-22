@@ -200,6 +200,7 @@ def process_bulk_generation(
                         p.get("type") == "currency"
                         or p.get("calculated", False)
                         or "insurance" in p["name"].lower()
+                        or p["name"].lower().startswith("pf_")
                     )
                 },
             )

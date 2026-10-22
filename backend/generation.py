@@ -287,22 +287,12 @@ def render_document(
             return format_inr_number(value)
         return str(value)
 
-    context: Dict[str, Any] = {
-        name: display_value(name, value) for name, value in values.items()
-    }
-    calculated_values, formula_replacements = evaluate_template_formulas(template_path, values)
-    context.update({name: display_value(name, value) for name, value in calculated_values.items()})
-
-    # A named [CALC(field = ...)] tag is replaced directly, so format it too
-    # when that calculated field is configured as Currency.
-    for block in extract_formula_blocks_from_docx(template_path):
-        if block.target and block.target in currency_field_names:
-            formula_replacements[block.source] = display_value(
-                block.target, calculated_values[block.target]
-            )
-
-    select_replacements: Dict[str, str] = {}
-    for select in extract_select_blocks_from_docx(template_path):
+    # Validate SELECT choices before formula evaluation and pass the raw
+    # selection into the formula engine. The engine safely resolves numeric
+    # choices or expressions when another [CALC(...)] references that field.
+    select_blocks = extract_select_blocks_from_docx(template_path)
+    selected_options: Dict[str, str] = {}
+    for select in select_blocks:
         if select.name not in values:
             raise FormulaError(f"Dropdown '{select.name}' requires a selection.")
         selected = str(values[select.name]).strip()
@@ -310,9 +300,45 @@ def render_document(
             raise FormulaError(
                 f"Dropdown '{select.name}' must be one of: {', '.join(select.options)}."
             )
+        selected_options[select.name] = selected
+
+    calculated_values, formula_replacements = evaluate_template_formulas(
+        template_path, values, selected_options
+    )
+    # A SELECT choice can itself be a calculation such as
+    # CALC[0.12 * {{basic_monthly}}].  Resolve it before applying display
+    # formatting; otherwise the raw CALC[...] text would be sent to Decimal
+    # for a currency field.
+    context: Dict[str, Any] = {
+        name: display_value(name, calculated_values.get(name, value))
+        for name, value in values.items()
+    }
+    context.update({name: display_value(name, value) for name, value in calculated_values.items()})
+
+    # A named [CALC(field = ...)] tag is replaced directly, so format it too
+    # when that calculated field is configured as Currency. Some existing
+    # CTC templates use an inline final-total formula instead, for example
+    # [CALC({{total_fixed_annual}} + {{performance_bonus_annual}})].
+    # Detect its currency references so it receives the same Indian commas.
+    for block in extract_formula_blocks_from_docx(template_path):
+        if block.target and block.target in currency_field_names:
+            formula_replacements[block.source] = display_value(
+                block.target, calculated_values[block.target]
+            )
+        elif not block.target:
+            references = re.findall(r"\{\{\s*([^{}]+?)\s*\}\}", block.expression)
+            if any(reference.strip() in currency_field_names for reference in references):
+                formula_replacements[block.source] = format_inr_number(
+                    formula_replacements[block.source]
+                )
+
+    select_replacements: Dict[str, str] = {}
+    for select in select_blocks:
+        selected = selected_options[select.name]
         # A Select field can still represent a money amount (for example,
         # insurance_annual with options 8000 and 15000).
-        select_replacements[select.source] = display_value(select.name, selected)
+        resolved_selection = calculated_values.get(select.name, selected)
+        select_replacements[select.source] = display_value(select.name, resolved_selection)
 
     # Also make sure full_name / employee_name convenience variables exist if first & last provided
     if "first_name" in values and "last_name" in values:

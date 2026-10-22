@@ -93,10 +93,14 @@ def refresh_template_placeholders():
         extracted = extract_placeholders_from_docx(template_path)
         # Keep deliberate UI field-type overrides while refreshing the DOCX
         # extraction (for example, an author changing a text field to Select).
+        # A [SELECT(...)] tag authored in the DOCX is authoritative, however:
+        # its actual option values must replace stale UI defaults such as
+        # "Option 1" and "Option 2".
         existing = {field.get("name"): field for field in document.get("placeholders", [])}
         for field in extracted:
             saved = existing.get(field.get("name"))
-            if saved and saved.get("type_overridden"):
+            is_docx_select = field.get("type") == "select" and field.get("options")
+            if saved and saved.get("type_overridden") and not is_docx_select:
                 field["type"] = saved.get("type", field["type"])
                 field["options"] = saved.get("options")
                 field["type_overridden"] = True
@@ -343,6 +347,7 @@ async def generate_document(doc_id: str, request: GenerateRequest):
                     p.get("type") == "currency"
                     or p.get("calculated", False)
                     or "insurance" in p["name"].lower()
+                    or p["name"].lower().startswith("pf_")
                 )
             },
         )

@@ -17,7 +17,7 @@ export interface Placeholder {
   required: boolean;
   calculated: boolean;
   description?: string;
-  /** Fixed choices authored with [SELECT(field, option1, option2)] in the DOCX. */
+  /** Choices authored with [SELECT(field, option1, option2)] in the DOCX. */
   options?: string[] | null;
   type_overridden?: boolean;
 }

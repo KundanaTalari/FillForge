@@ -116,6 +116,7 @@ def test_currency_inputs_and_calculations_use_indian_comma_grouping(tmp_path):
         "Annual CTC: {{ctc_total}}",
         "[CALC(basic_monthly = {{ctc_total}} / 24)]",
         "[CALC(gross_monthly = {{ctc_total}} / 12)]",
+        "Annual from inline formula: [CALC({{basic_monthly}} * 12)]",
     ])
     output, _ = render_document(
         template,
@@ -128,6 +129,7 @@ def test_currency_inputs_and_calculations_use_indian_comma_grouping(tmp_path):
     assert "2,40,000" in generated_text
     assert "10,000" in generated_text
     assert "20,000" in generated_text
+    assert "1,20,000" in generated_text
 
 
 def test_docx_select_tag_becomes_a_dropdown_field_and_renders_selection(tmp_path):
@@ -150,6 +152,156 @@ def test_docx_select_tag_becomes_a_dropdown_field_and_renders_selection(tmp_path
     generated = Document(output)
     assert "[SELECT(" not in "\n".join(paragraph.text for paragraph in generated.paragraphs)
     assert "15,000" in "\n".join(paragraph.text for paragraph in generated.paragraphs)
+
+
+def test_select_numeric_and_expression_options_feed_downstream_calculations(tmp_path):
+    template = make_template(tmp_path / "pf_select.docx", [
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+        "[SELECT(pf_monthly, 3000, {{basic_monthly}} * 0.12)]",
+        "[CALC(pf_annual = {{pf_monthly}} * 12)]",
+    ])
+
+    fixed, _ = evaluate_template_formulas(
+        template, {"ctc_total": 720000}, {"pf_monthly": "3000"}
+    )
+    assert fixed["basic_monthly"] == Decimal("30000")
+    assert fixed["pf_monthly"] == Decimal("3000")
+    assert fixed["pf_annual"] == Decimal("36000")
+
+    percentage, _ = evaluate_template_formulas(
+        template,
+        {"ctc_total": 720000},
+        {"pf_monthly": "{{basic_monthly}} * 0.12"},
+    )
+    assert percentage["pf_monthly"] == Decimal("3600")
+    assert percentage["pf_annual"] == Decimal("43200")
+
+
+def test_select_nested_calc_option_feeds_downstream_calculations(tmp_path):
+    template = make_template(tmp_path / "pf_select_nested_calc.docx", [
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+        "[SELECT(pf_monthly, 3000, CALC[0.12 * {{basic_monthly}}])]",
+        "[CALC(pf_annual = {{pf_monthly}} * 12)]",
+    ])
+    assert select_fields(template) == {
+        "pf_monthly": ("3000", "CALC[0.12 * {{basic_monthly}}]")
+    }
+    fixed, _ = evaluate_template_formulas(
+        template, {"ctc_total": 720000}, {"pf_monthly": "3000"}
+    )
+    assert fixed["pf_monthly"] == Decimal("3000")
+    assert fixed["pf_annual"] == Decimal("36000")
+
+    calculated, _ = evaluate_template_formulas(
+        template,
+        {"ctc_total": 720000},
+        {"pf_monthly": "CALC[0.12 * {{basic_monthly}}]"},
+    )
+    assert isinstance(calculated["pf_monthly"], Decimal)
+    assert calculated["pf_monthly"] == Decimal("3600")
+    assert calculated["pf_annual"] == Decimal("43200")
+
+
+def test_select_expression_recalculates_when_its_dependency_changes(tmp_path):
+    template = make_template(tmp_path / "pf_select_recalculate.docx", [
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+        "[SELECT(pf_monthly, 3000, {{basic_monthly}} * 0.12)]",
+        "[CALC(pf_annual = {{pf_monthly}} * 12)]",
+    ])
+    values, _ = evaluate_template_formulas(
+        template,
+        {"ctc_total": 480000},
+        {"pf_monthly": "{{basic_monthly}} * 0.12"},
+    )
+    assert values["basic_monthly"] == Decimal("20000")
+    assert values["pf_monthly"] == Decimal("2400")
+    assert values["pf_annual"] == Decimal("28800")
+
+
+def test_nested_select_calc_recalculates_when_its_dependency_changes(tmp_path):
+    template = make_template(tmp_path / "pf_select_nested_recalculate.docx", [
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+        "[SELECT(pf_monthly, 3000, CALC[0.12 * {{basic_monthly}}])]",
+        "[CALC(pf_annual = {{pf_monthly}} * 12)]",
+    ])
+    values, _ = evaluate_template_formulas(
+        template,
+        {"ctc_total": 480000},
+        {"pf_monthly": "CALC[0.12 * {{basic_monthly}}]"},
+    )
+    assert values["pf_monthly"] == Decimal("2400")
+    assert values["pf_annual"] == Decimal("28800")
+
+
+def test_invalid_nested_select_calc_has_clear_error(tmp_path):
+    template = make_template(tmp_path / "invalid_nested_pf_select.docx", [
+        "[SELECT(pf_monthly, 3000, CALC[0.12 * {{unknown_basic}}])]",
+        "[CALC(pf_annual = {{pf_monthly}} * 12)]",
+    ])
+    with pytest.raises(FormulaError, match="Dropdown 'pf_monthly' selected expression.*unknown_basic"):
+        evaluate_template_formulas(
+            template,
+            {},
+            {"pf_monthly": "CALC[0.12 * {{unknown_basic}}]"},
+        )
+
+
+def test_select_expression_is_numeric_even_without_a_downstream_formula(tmp_path):
+    template = make_template(tmp_path / "pf_select_direct.docx", [
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+        "[SELECT(pf_monthly, 3000, {{basic_monthly}} * 0.12)]",
+    ])
+    values, _ = evaluate_template_formulas(
+        template,
+        {"ctc_total": 720000},
+        {"pf_monthly": "{{basic_monthly}} * 0.12"},
+    )
+    assert values["pf_monthly"] == Decimal("3600")
+
+
+def test_pf_select_value_is_rendered_with_indian_currency_commas(tmp_path):
+    template = make_template(tmp_path / "pf_select_currency.docx", [
+        "PF: [SELECT(pf_monthly, 3000, {{basic_monthly}} * 0.12)]",
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+    ])
+    output, _ = render_document(
+        template,
+        {"ctc_total": 720000, "pf_monthly": "3000"},
+        "pf_select_currency",
+        "docx",
+        currency_fields={"pf_monthly", "basic_monthly"},
+    )
+    generated_text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+    assert "PF: 3,000" in generated_text
+
+
+def test_nested_calc_select_value_is_evaluated_before_currency_formatting(tmp_path):
+    template = make_template(tmp_path / "pf_nested_select_currency.docx", [
+        "PF: [SELECT(pf_monthly, 3000, CALC[0.12 * {{basic_monthly}}])]",
+        "[CALC(basic_monthly = {{ctc_total}} / 24)]",
+    ])
+    output, _ = render_document(
+        template,
+        {"ctc_total": 720000, "pf_monthly": "CALC[0.12 * {{basic_monthly}}]"},
+        "pf_nested_select_currency",
+        "docx",
+        currency_fields={"pf_monthly", "basic_monthly"},
+    )
+    generated_text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+    assert "PF: 3,600" in generated_text
+
+
+def test_invalid_select_expression_has_clear_error(tmp_path):
+    template = make_template(tmp_path / "invalid_pf_select.docx", [
+        "[SELECT(pf_monthly, 3000, {{unknown_basic}} * 0.12)]",
+        "[CALC(pf_annual = {{pf_monthly}} * 12)]",
+    ])
+    with pytest.raises(FormulaError, match="Dropdown 'pf_monthly' selected expression.*unknown_basic"):
+        evaluate_template_formulas(
+            template,
+            {},
+            {"pf_monthly": "{{unknown_basic}} * 0.12"},
+        )
 
 
 def test_placeholders_follow_first_appearance_in_document_order(tmp_path):

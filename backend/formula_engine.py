@@ -75,9 +75,23 @@ def find_select_blocks(text: str) -> List[SelectBlock]:
     departments, locations, or any other fixed choices.
     """
     blocks: List[SelectBlock] = []
-    pattern = re.compile(r"\[SELECT\(([^\]]*)\)\]")
-    for match in pattern.finditer(text):
-        parts = [part.strip() for part in match.group(1).split(",")]
+    index = 0
+    while True:
+        start = text.find("[SELECT(", index)
+        if start < 0:
+            return blocks
+        cursor = start + len("[SELECT(")
+        parenthesis_depth = 1
+        while cursor < len(text) and parenthesis_depth:
+            if text[cursor] == "(":
+                parenthesis_depth += 1
+            elif text[cursor] == ")":
+                parenthesis_depth -= 1
+            cursor += 1
+        if parenthesis_depth or cursor >= len(text) or text[cursor] != "]":
+            raise FormulaError(f"Invalid dropdown at character {start}: missing closing )].")
+        source = text[start:cursor + 1]
+        parts = _split_select_options(text[start + len("[SELECT("):cursor - 1])
         if len(parts) < 3 or not parts[0] or any(not option for option in parts[1:]):
             raise FormulaError(
                 "Dropdown must use [SELECT(field_name, option1, option2)]."
@@ -85,8 +99,34 @@ def find_select_blocks(text: str) -> List[SelectBlock]:
         name = parts[0]
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_ ]*", name):
             raise FormulaError(f"Invalid dropdown field name: {name}")
-        blocks.append(SelectBlock(source=match.group(0), name=name, options=tuple(parts[1:])))
-    return blocks
+        blocks.append(SelectBlock(source=source, name=name, options=tuple(parts[1:])))
+        index = cursor + 1
+
+
+def _split_select_options(body: str) -> List[str]:
+    """Split only at commas outside nested math, placeholders, and CALC[]."""
+    parts: List[str] = []
+    start = parentheses = square_brackets = curly_braces = 0
+    for index, char in enumerate(body):
+        if char == "(":
+            parentheses += 1
+        elif char == ")":
+            parentheses -= 1
+        elif char == "[":
+            square_brackets += 1
+        elif char == "]":
+            square_brackets -= 1
+        elif char == "{":
+            curly_braces += 1
+        elif char == "}":
+            curly_braces -= 1
+        elif char == "," and not (parentheses or square_brackets or curly_braces):
+            parts.append(body[start:index].strip())
+            start = index + 1
+    parts.append(body[start:].strip())
+    if parentheses or square_brackets or curly_braces:
+        raise FormulaError("Invalid dropdown: unbalanced brackets in an option.")
+    return parts
 
 
 def extract_formula_blocks_from_docx(template_path: Path) -> List[FormulaBlock]:
@@ -235,8 +275,40 @@ def format_formula_value(value: Decimal) -> str:
     return str(int(value)) if value == value.to_integral() else format(value, "f")
 
 
-def evaluate_template_formulas(template_path: Path, input_values: Dict[str, Any]) -> Tuple[Dict[str, Decimal], Dict[str, str]]:
-    """Evaluate named and inline formulas and return field values + tag replacements."""
+def _is_numeric_select_choice(choice: Any) -> bool:
+    """Whether a SELECT choice is intended for the safe math evaluator.
+
+    Plain selections such as ``Hyderabad`` remain text. Numeric literals and
+    any choice containing a placeholder are calculation choices.
+    """
+    text = _select_calculation_expression(choice)
+    return "{{" in text or bool(re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", text))
+
+
+def _select_calculation_expression(choice: Any) -> str:
+    """Unwrap a supported nested ``CALC[expression]`` SELECT choice."""
+    text = str(choice).strip()
+    match = re.fullmatch(r"CALC\[(.*)\]", text, flags=re.DOTALL | re.IGNORECASE)
+    if not match:
+        return text
+    expression = match.group(1).strip()
+    if not expression:
+        raise FormulaError("Dropdown CALC option cannot be empty.")
+    return expression
+
+
+def evaluate_template_formulas(
+    template_path: Path,
+    input_values: Dict[str, Any],
+    selected_options: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, Decimal], Dict[str, str]]:
+    """Evaluate CALC formulas, including numeric/expression SELECT choices.
+
+    ``selected_options`` contains the raw option selected for each DOCX
+    [SELECT(...)] field. Fixed text selections remain text at render time;
+    numeric selections and safe math expressions are resolved only when a
+    formula needs their value.
+    """
     blocks = extract_formula_blocks_from_docx(template_path)
     definitions: Dict[str, FormulaBlock] = {}
     for block in blocks:
@@ -247,7 +319,15 @@ def evaluate_template_formulas(template_path: Path, input_values: Dict[str, Any]
 
     resolved: Dict[str, Decimal] = {}
     resolving: Set[str] = set()
+    resolved_selects: Dict[str, Decimal] = {}
+    resolving_selects: Set[str] = set()
     inputs = {str(key).strip(): value for key, value in input_values.items() if value not in (None, "")}
+    selectable_fields = select_fields(template_path)
+    selections = {
+        str(key).strip(): value
+        for key, value in (selected_options or {}).items()
+        if value not in (None, "")
+    }
 
     def resolve(name: str) -> Decimal:
         if name in resolved: return resolved[name]
@@ -256,6 +336,27 @@ def evaluate_template_formulas(template_path: Path, input_values: Dict[str, Any]
             resolving.add(name)
             result = evaluate_expression(definitions[name].expression)
             resolving.remove(name)
+            resolved[name] = result
+            return result
+        if name in selections:
+            if name in resolved_selects:
+                return resolved_selects[name]
+            if name in resolving_selects:
+                raise FormulaError(f"Circular dropdown calculation dependency detected for '{name}'.")
+            selected = str(selections[name]).strip()
+            allowed = selectable_fields.get(name)
+            if not allowed or selected not in allowed:
+                raise FormulaError(f"Dropdown '{name}' must be one of: {', '.join(allowed or ())}.")
+            resolving_selects.add(name)
+            try:
+                result = evaluate_expression(_select_calculation_expression(selected))
+            except FormulaError as exc:
+                raise FormulaError(
+                    f"Dropdown '{name}' selected expression '{selected}' is not a valid numeric calculation: {exc}"
+                ) from exc
+            finally:
+                resolving_selects.remove(name)
+            resolved_selects[name] = result
             resolved[name] = result
             return result
         if name in inputs: return _as_decimal(name, inputs[name])
@@ -280,6 +381,13 @@ def evaluate_template_formulas(template_path: Path, input_values: Dict[str, Any]
 
     for target in definitions:
         resolve(target)
+
+    # Resolve numeric SELECT choices even when no subsequent CALC currently
+    # references them. This keeps their rendered value numeric while leaving
+    # ordinary text dropdowns untouched.
+    for name, selected in selections.items():
+        if _is_numeric_select_choice(selected):
+            resolve(name)
 
     replacements: Dict[str, str] = {}
     for block in blocks:

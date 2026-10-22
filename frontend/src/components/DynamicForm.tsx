@@ -57,7 +57,16 @@ function indianRupeesInWords(rawValue: unknown): string {
     remaining %= divisor;
   }
   if (remaining) parts.push(wordsBelowThousand(remaining));
-  return `Rupees ${parts.join(' ')} Only`;
+  return parts.join(' ');
+}
+
+function selectOptionLabel(placeholder: Placeholder, option: string): string {
+  const compact = option.replace(/\s+/g, '').toLowerCase();
+  if (placeholder.name.toLowerCase() === 'pf_monthly') {
+    if (compact === '3000') return '12% of ₹25,000 (₹3,000)';
+    if (compact === '{{basic_monthly}}*0.12' || compact === 'calc[0.12*{{basic_monthly}}]') return '12% of Basic Monthly';
+  }
+  return option;
 }
 
 
@@ -405,7 +414,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
                         <option key={option} value={option}>
                           {p.type === 'currency'
                             ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(option))
-                            : option}
+                            : selectOptionLabel(p, option)}
                         </option>
                       ))}
                     </select>
