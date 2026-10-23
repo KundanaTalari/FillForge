@@ -17,6 +17,12 @@ def detect_variable_type(name: str) -> str:
     tokens = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower().replace("-", "_").split("_")
     token_set = {token for token in tokens if token}
 
+    # Serial, reference, and employee IDs are identifiers rather than
+    # quantities. They may intentionally begin with zeroes (for example,
+    # ``013``), so treating them as a Number would lose information.
+    if token_set.intersection({"serial", "reference", "ref", "employeeid", "employee", "id"}):
+        return "text"
+
     # Amount-in-words fields are text. Whether they are calculated is decided
     # by a named [CALC(field = ...)] formula in the DOCX, not this backend.
     if "inwords" in s or "_in_words" in s:

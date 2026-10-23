@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import pandas as pd
 
-from storage import get_template_path, get_bulk_path, sanitize_filename, person_document_name
+from storage import get_template_path, get_bulk_path, sanitize_filename, person_document_name, download_name_from_pattern
 from validation import validate_and_normalize_value, is_calculated_variable
 from generation import render_document
 
@@ -88,6 +88,8 @@ def process_bulk_generation(
     file_extension: str,
     placeholders: List[Dict[str, Any]],
     output_format: str = "pdf",
+    filename_pattern: str | None = None,
+    document_id: str = "",
     pf_mode: str = "fixed",
     pf_percentage: float = 12.0,
     download_filename: str | None = None,
@@ -178,15 +180,15 @@ def process_bulk_generation(
             })
             continue
 
-        # Use each employee's Name and Designation, including templates whose
-        # fields are written as {{Name}} / {{Designation}} rather than snake case.
-        # The template name is only used if the spreadsheet has neither value.
-        base_name = person_document_name(row_clean, template_path.stem)
-        if not base_name or base_name == "document":
-            base_name = f"record_{idx}"
-        base_name = sanitize_filename(f"{base_name}_{uuid.uuid4().hex[:6]}")
-
         try:
+            # Resolve the pattern for this spreadsheet row. This makes names
+            # such as {{employee_id}}_{{full_name}} different per employee.
+            archive_stem = download_name_from_pattern(
+                filename_pattern, row_clean, template_path.name, document_id
+            )
+            if not archive_stem or archive_stem == "document":
+                archive_stem = f"record_{idx}"
+            base_name = sanitize_filename(f"{archive_stem}_{uuid.uuid4().hex[:6]}")
             out_file, mime = render_document(
                 template_path=template_path,
                 values=row_clean,
@@ -206,9 +208,6 @@ def process_bulk_generation(
             )
             # Meaningful archive name
             ext = ".pdf" if output_format.lower() == "pdf" else ".docx"
-            archive_stem = person_document_name(row_clean, template_path.stem)
-            if not archive_stem or archive_stem == "document":
-                archive_stem = f"record_{idx}"
             archive_name = f"{archive_stem}{ext}"
             duplicate = 2
             while archive_name.lower() in used_archive_names:

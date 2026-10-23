@@ -69,6 +69,7 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
   const [uploadedHeaders, setUploadedHeaders] = useState<string[]>([]);
   const [uploadedRowCount, setUploadedRowCount] = useState<number>(0);
   const [format, setFormat] = useState<'pdf' | 'docx'>('pdf');
+  const [filenamePattern, setFilenamePattern] = useState('{{full_name}}_{{filename}}');
   const [processing, setProcessing] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [result, setResult] = useState<BulkResult | null>(null);
@@ -248,7 +249,7 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
     setProcessing(true);
     setErrorMsg(null);
     try {
-      const res = await bulkGenerate(document.id, selectedFile, format);
+      const res = await bulkGenerate(document.id, selectedFile, format, filenamePattern);
       setResult(res);
     } catch (err: any) {
       setErrorMsg(
@@ -561,6 +562,20 @@ export const BulkMode: React.FC<BulkModeProps> = ({ document }) => {
                 DOCX (.docx)
               </button>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">File name for each document</label>
+            <input
+              value={filenamePattern}
+              onChange={(event) => setFilenamePattern(event.target.value)}
+              placeholder="{{employee_id}}_{{full_name}}_{{filename}}"
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-xs font-mono text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+            />
+            <p className="text-[10px] text-slate-500">
+              Use spreadsheet fields such as <code>{'{{employee_id}}'}</code> and <code>{'{{full_name}}'}</code>, plus <code>{'{{filename}}'}</code> or <code>{'{{id}}'}</code>.
+              ZIP: <code>{document.name.replace(/\.docx$/i, '')}_Bulk.zip</code>
+            </p>
           </div>
 
         </div>

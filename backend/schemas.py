@@ -27,6 +27,10 @@ class DocumentResponse(BaseModel):
 class GenerateRequest(BaseModel):
     format: str = Field(default="pdf", description="docx or pdf")
     values: Dict[str, Any] = Field(default_factory=dict)
+    filename_pattern: Optional[str] = Field(
+        default=None,
+        description="Optional download-name pattern, for example {{full_name}}_{{filename}}",
+    )
     pf_mode: str = Field(default="fixed", description="fixed or percentage")
     pf_percentage: float = Field(default=12.0, description="Used when pf_mode is percentage")
 

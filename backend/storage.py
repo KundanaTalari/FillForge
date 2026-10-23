@@ -52,6 +52,54 @@ def person_document_name(values: dict, template_name: str = "") -> str:
 
     return sanitize_filename(template_stem or "document")
 
+
+def download_name_from_pattern(
+    pattern: str | None,
+    values: dict,
+    template_name: str,
+    document_id: str,
+) -> str:
+    """Resolve a user-authored download filename pattern safely.
+
+    Patterns may contain any input placeholder (for example ``{{employee_id}}``)
+    as well as ``{{filename}}``/``{{template_name}}`` and ``{{full_name}}``.
+    An empty pattern retains the existing fallback naming behaviour.
+    """
+    if not pattern or not pattern.strip():
+        return person_document_name(values, template_name)
+
+    normalized = {str(key).lower().replace("_", ""): value for key, value in values.items()}
+
+    def first_value(*keys: str) -> str:
+        for key in keys:
+            value = normalized.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return ""
+
+    full_name = first_value("fullname", "employeename", "candidatename", "name")
+    if not full_name:
+        full_name = " ".join(filter(None, [first_value("firstname"), first_value("lastname")]))
+    template_stem = Path(template_name).stem or "document"
+
+    def replacement(match: re.Match[str]) -> str:
+        token = match.group(1).strip()
+        key = token.lower().replace("_", "")
+        if key in {"filename", "templatename"}:
+            return template_stem
+        if key in {"fullname", "employeename", "candidatename"}:
+            return full_name
+        if key == "id":
+            # Prefer an actual document field named id. Otherwise expose the
+            # document identifier requested by the pattern.
+            return first_value("id") or document_id
+        if key in normalized and normalized[key] is not None:
+            return str(normalized[key]).strip()
+        raise ValueError(f"Unknown download-name placeholder: {{{{{token}}}}}.")
+
+    resolved = re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", replacement, pattern.strip())
+    return sanitize_filename(resolved)
+
 def get_template_path(filename: str) -> Path:
     safe = sanitize_filename(filename)
     return TEMPLATES_DIR / safe

@@ -107,6 +107,7 @@ export const generateDocument = async (
   payload: {
     format: 'docx' | 'pdf';
     values: Record<string, any>;
+    filename_pattern?: string;
     pf_mode?: 'fixed' | 'percentage';
     pf_percentage?: number;
   },
@@ -166,11 +167,13 @@ export const downloadBulkZip = async (downloadUrl: string): Promise<Blob> => {
 export const bulkGenerate = async (
   id: string,
   file: File,
-  format: 'docx' | 'pdf'
+  format: 'docx' | 'pdf',
+  filenamePattern?: string,
 ): Promise<BulkResult> => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('format', format);
+  if (filenamePattern?.trim()) formData.append('filename_pattern', filenamePattern.trim());
 
   const res = await api.post(`/documents/${id}/bulk-generate`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

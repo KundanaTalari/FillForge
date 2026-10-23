@@ -124,6 +124,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   const [calculations, setCalculations] = useState<CTCBreakdown | null>(null);
   const [calcLoading, setCalcLoading] = useState(false);
   const [generatingFormat, setGeneratingFormat] = useState<'docx' | 'pdf' | null>(null);
+  const [filenamePattern, setFilenamePattern] = useState('{{full_name}}_{{filename}}');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [fieldSaving, setFieldSaving] = useState<string | null>(null);
@@ -282,6 +283,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
         const { blob, filename } = await generateDocument(document.id, {
           format,
           values: formData,
+          filename_pattern: filenamePattern,
         });
 
         // Trigger automatic browser download
@@ -359,6 +361,17 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Clear</span>
             </button>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Download file name</label>
+            <input
+              value={filenamePattern}
+              onChange={(e) => setFilenamePattern(e.target.value)}
+              placeholder="{{full_name}}_{{filename}}"
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-xs text-slate-900 font-mono focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">Use document fields like <code>{'{{employee_id}}'}</code>, plus <code>{'{{full_name}}'}</code>, <code>{'{{filename}}'}</code>, or <code>{'{{id}}'}</code>.</p>
           </div>
 
           <div className="grid grid-cols-1 gap-4">

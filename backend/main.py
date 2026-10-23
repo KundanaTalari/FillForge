@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, JSONResponse
 
 from db import init_db, insert_document, update_document_placeholders, update_placeholder_metadata, update_document_name, get_all_documents, get_document_by_id, delete_document_by_id, record_generation, get_user_by_email, get_user_by_id, insert_user
-from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, person_document_name, GENERATED_DIR
+from storage import init_storage, get_template_path, get_generated_path, get_bulk_path, sanitize_filename, download_name_from_pattern, GENERATED_DIR
 from generation import extract_placeholders_from_docx, render_document, convert_to_pdf
 from formula_engine import FormulaError
 from bulk import generate_sample_sheet, process_bulk_generation
@@ -324,7 +324,15 @@ async def generate_document(doc_id: str, request: GenerateRequest):
         raise HTTPException(status_code=422, detail={"errors": validation_errors})
 
     # Prepare file naming
-    base_name = person_document_name(validated_values, doc["name"])
+    try:
+        base_name = download_name_from_pattern(
+            request.filename_pattern,
+            validated_values,
+            doc["name"],
+            doc_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     gen_id = str(uuid.uuid4())
     unique_base = f"{base_name}_{gen_id[:8]}"
 
@@ -391,6 +399,7 @@ async def bulk_generate(
     doc_id: str,
     file: UploadFile = File(...),
     format: str = Form("pdf"),
+    filename_pattern: Optional[str] = Form(None),
     pf_mode: str = Form("fixed"),
     pf_percentage: float = Form(12.0)
 ):
@@ -414,9 +423,11 @@ async def bulk_generate(
             file_extension=ext,
             placeholders=doc["placeholders"],
             output_format=format,
+            filename_pattern=filename_pattern,
+            document_id=doc_id,
             pf_mode=pf_mode,
             pf_percentage=pf_percentage,
-            download_filename=f"{sanitize_filename(Path(doc['name']).stem)}_Bulk_{format.lower()}.zip"
+            download_filename=f"{sanitize_filename(Path(doc['name']).stem)}_Bulk.zip"
         )
         return result
     except Exception as e:
